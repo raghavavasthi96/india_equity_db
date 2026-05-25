@@ -49,7 +49,7 @@ from pipeline.configs import config
 from .utils.logger import get_logger
 from .utils.http import make_session, polite_sleep
 from .utils.cli import parse_symbol_list
-from .utils.dates import parse_quarter_date, parse_annual_date
+from .utils.dates import parse_quarter_date, parse_annual_date, financials_history_floor
 from .utils.io import read_long_panel, write_long_panel, merge_long_panel, wide_to_long, path
 from .utils.gaps import log_gap
 
@@ -340,8 +340,8 @@ def _save_panel(new_df: Optional[pd.DataFrame], panel_path: str, label: str):
     if new_df is None or new_df.empty:
         logger.info(f"{label}: no new data to write.")
         return
-    project_start = pd.Timestamp(config.PROJECT_START_DATE)
-    new_df = new_df[pd.to_datetime(new_df["date"]) >= project_start].copy()
+    floor = financials_history_floor()
+    new_df = new_df[pd.to_datetime(new_df["date"]) >= floor].copy()
     existing = read_long_panel(panel_path)
     combined = merge_long_panel(existing, new_df)
     write_long_panel(combined, panel_path)
@@ -352,7 +352,7 @@ def _save_panel(new_df: Optional[pd.DataFrame], panel_path: str, label: str):
 # Main
 # ---------------------------------------------------------------------------
 
-def _worker(symbol: str, force: bool, project_start_ts: pd.Timestamp) -> dict:
+def _worker(symbol: str, force: bool, floor_ts: pd.Timestamp) -> dict:
     """
     Fetch + parse one symbol. Returns a dict with optional 'quarterly', 'annual', 'failure' keys.
     Pure function (no shared state) — safe to run in a thread pool.
@@ -374,10 +374,10 @@ def _worker(symbol: str, force: bool, project_start_ts: pd.Timestamp) -> dict:
 
     if "quarterly" in parsed:
         q_df = parsed["quarterly"]
-        if not q_df[pd.to_datetime(q_df["date"]) >= project_start_ts].empty:
+        if not q_df[pd.to_datetime(q_df["date"]) >= floor_ts].empty:
             out["quarterly"] = q_df
         else:
-            out["failure"] = ("NoRecentData", f"All quarterly dates before {config.PROJECT_START_DATE}")
+            out["failure"] = ("NoRecentData", f"All quarterly dates before financials floor {floor_ts.date()}")
     else:
         out["failure"] = ("NoQuarterlyData", "No quarterly P&L section on screener page")
 
@@ -413,13 +413,13 @@ def main():
 
     q_panel_path = path("financials_panel.csv")
     a_panel_path = path("financials_annual_panel.csv")
-    project_start_ts = pd.Timestamp(config.PROJECT_START_DATE)
+    floor_ts = financials_history_floor()
 
     all_quarterly, all_annual = [], []
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {
-            pool.submit(_worker, sym, args.force, project_start_ts): sym
+            pool.submit(_worker, sym, args.force, floor_ts): sym
             for sym in symbols
         }
         for fut in tqdm(as_completed(futures), total=len(symbols), desc="Fetching financials"):

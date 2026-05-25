@@ -26,41 +26,45 @@ def standardise(raw: pd.Series, winsor_sigma: float = 3.0) -> pd.Series:
 # ---------------------------------------------------------------------------
 
 def momentum_12_1(pool, date, ctx) -> pd.Series:
-    """Trailing 12m total return, skip last 21 trading days."""
-    close = ctx.close
-    end = date - pd.Timedelta(days=21)
-    start = date - pd.Timedelta(days=365)
-    px = close.loc[(close.index >= start) & (close.index <= end)]
-    syms = [s for s in pool if s in px.columns]
-    if len(px) < 2 or not syms:
+    """Trailing 12m total return, skip last 21 trading days (~252d / 21d)."""
+    close = ctx.close.loc[:date]
+    syms = [s for s in pool if s in close.columns]
+    if len(close) < 252 or not syms:
         return pd.Series(dtype=float)
-    first = px[syms].iloc[0]
-    last = px[syms].iloc[-1]
-    return ((last / first) - 1.0).dropna()
+    px = close[syms].iloc[-252:-21]
+    if len(px) < 2:
+        return pd.Series(dtype=float)
+    return ((px.iloc[-1] / px.iloc[0]) - 1.0).dropna()
 
 
 def vol_inverse(pool, date, ctx) -> pd.Series:
-    """Inverse of trailing 60d realised vol on daily returns."""
-    rets = ctx.returns
-    end = date
-    start = date - pd.Timedelta(days=90)  # ~60 trading days
-    sub = rets.loc[(rets.index > start) & (rets.index <= end)]
-    syms = [s for s in pool if s in sub.columns]
-    if len(sub) < 20 or not syms:
+    """Inverse of trailing 1y realised vol on daily returns (~252 trading days)."""
+    rets = ctx.returns.loc[:date]
+    syms = [s for s in pool if s in rets.columns]
+    if len(rets) < 60 or not syms:
         return pd.Series(dtype=float)
-    vol = sub[syms].std()
+    sub = rets[syms].iloc[-252:]
+    vol = sub.std()
     vol = vol[vol > 0]
     return 1.0 / vol
 
 
 def earnings_growth_yoy(pool, date, ctx) -> pd.Series:
-    """YoY growth of trailing net_profit using financials_panel."""
+    """YoY growth of trailing net_profit using financials_panel.
+
+    `financials_panel.date` is the quarter-end (Mar/Jun/Sep/Dec 31), NOT the
+    filing date. SEBI gives Indian listed companies 45 days (quarterly) /
+    60 days (annual) to file. We lag by `reporting_lag_days` (default 60) so
+    period-end results are only used after they could plausibly be public.
+    """
     fin = ctx.financials
-    fin = fin[(fin["parameter"] == "net_profit") & (fin["date"] <= date)]
+    lag_days = getattr(ctx.cfg, "reporting_lag_days", 60)
+    available_as_of = date - pd.Timedelta(days=lag_days)
+    fin = fin[(fin["parameter"] == "net_profit") & (fin["date"] <= available_as_of)]
     if fin.empty:
         return pd.Series(dtype=float)
     last = fin.sort_values("date").groupby("symbol").tail(1).set_index("symbol")["value"]
-    prior_cutoff = date - pd.Timedelta(days=365)
+    prior_cutoff = available_as_of - pd.Timedelta(days=365)
     fin_prior = fin[fin["date"] <= prior_cutoff]
     prior = (
         fin_prior.sort_values("date").groupby("symbol").tail(1).set_index("symbol")["value"]

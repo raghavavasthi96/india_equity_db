@@ -1,5 +1,76 @@
 # Backtest changelog
 
+## v0.5.3 — 2026-05-25
+
+Two follow-up fixes shaken out by the v0.4.2 price-history extension.
+
+### Fixed
+- **Snap-to-prior-trading-day boundary against the first universe snapshot**
+  ([`context.py:build_rebal_schedule`](../context.py)). With the prices panel
+  now extending below `PROJECT_START_DATE`, the Q rebal candidate `2018-06-30`
+  (Saturday) snapped back to `2018-06-29` (Friday — previously unavailable, now
+  a valid trading day). But `snap_asof` is strict `≤` and the first universe
+  snapshot is dated `2018-06-30`, so the rebal produced an empty pool. Schedule
+  now detects "snap-backward landed strictly before the first universe
+  snapshot" and falls forward to the first trading day `≥` candidate, landing
+  on `2018-07-02` in this case. Same first-day seed across all rebal
+  frequencies sharing the same `cfg.start`.
+- **Engine crash when a rebal produces an empty target**
+  ([`engine.py:run_backtest`](../engine.py)). `trade_dates_set` was built from
+  the full schedule, but `targets` only held rebals that produced non-empty
+  weights. A skipped rebal then tripped `KeyError: Timestamp(...)` in the daily
+  loop on its trade date. Defensive fix: derive `trade_dates_set` from
+  `targets.keys()` after the pre-compute pass.
+
+## v0.5.2 — 2026-05-25
+
+Fundamental-signal warm-up runway.
+
+### Fixed
+- **`earnings_growth_yoy` first-year coverage**: paired with pipeline v0.4.3's
+  `FINANCIALS_HISTORY_LOOKBACK_QUARTERS` (defaults to 6). `financials_panel.csv`
+  and `financials_annual_panel.csv` now extend ~18 months before
+  `PROJECT_START_DATE`, so YoY / multi-quarter fundamental signals have a
+  prior-year reading at the first rebal date instead of returning an empty
+  score for the first ~14 months of backtest.
+
+## v0.5.1 — 2026-05-25
+
+Cross-frequency comparability + cleaner dashboard stats.
+
+### Fixed
+- **Schedule snap falls forward when no prior trading day exists**
+  ([`context.py:build_rebal_schedule`](../context.py)). Previously, a calendar
+  candidate that pre-dated the price panel (e.g. `cfg.start = 2018-06-30` when
+  `prices_panel.csv` started at `2018-07-02`) was silently dropped — pushing
+  the next candidate to become `schedule[0]`. This produced different effective
+  start dates across rebal frequencies sharing the same `cfg.start`: M anchored
+  on `2018-07-31`, Q on `2018-09-28`, so each run loaded a different benchmark
+  window and reported different `cagr_benchmark` / `vol_benchmark` /
+  `sharpe_benchmark`. After the fix, both frequencies seed on the first
+  available trading day, and the benchmark profile is identical across all
+  rebal frequencies for a given `cfg.start`.
+- **Signal warm-up runway**: paired with pipeline v0.4.2's
+  `PRICE_HISTORY_LOOKBACK_DAYS` (defaults to 365). `prices_panel.csv` now
+  extends ~1 year before `PROJECT_START_DATE`, so signals with trailing
+  lookbacks (`momentum_12_1`, `vol_inverse`, …) have data at the first rebal
+  date instead of producing an empty score and tripping the
+  "ffmcap_tilt requires signal_fn" guard in `weights.py`.
+
+### Changed
+- **`metrics.compute_summary`** — `avg_one_way_turnover` renamed to
+  `turnover_per_rebal`; new `turnover_annualized` (= `Σ one-way turnover / years`,
+  matching the `tcost_bps_annualized` formulation).
+- **Dashboard stats cards** — dropped Gross max DD and Benchmark max DD blocks
+  (the drawdown overlay chart still shows all three series; the table now
+  surfaces only the Net DD block to declutter). Portfolio card now shows
+  "Turnover / rebal" + "Turnover annualised" alongside the existing T-cost pair.
+
+### Preset tuning (non-breaking)
+- `momentum_q` and `mom_lvol_q`: `tilt_gamma 1.0 → 1.5`, switched post-signal
+  selection from `top_quantile=0.3` to `top_n=50`. `mom_lvol_q` renamed to
+  `mom_lvol_q_top50` via `run_id`.
+
 ## v0.5.0 — 2026-05-25
 
 First analysis layer on top of the database: a flexible, PIT-correct,

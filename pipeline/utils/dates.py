@@ -63,6 +63,40 @@ def enforce_project_floor(start: date) -> date:
     return start
 
 
+def price_history_floor() -> date:
+    """Absolute earliest date prices may be fetched from: PROJECT_START_DATE
+    minus the configured signal-lookback buffer. Prices and financials are the
+    two artifacts allowed below PROJECT_START_DATE — universe and XBRL stay
+    floored. See `financials_history_floor()` for the financials analogue."""
+    from datetime import timedelta
+    return (
+        date.fromisoformat(config.PROJECT_START_DATE)
+        - timedelta(days=config.PRICE_HISTORY_LOOKBACK_DAYS)
+    )
+
+
+def enforce_price_history_floor(start: date) -> date:
+    """Raise SystemExit if `start` precedes the lookback-extended price floor."""
+    floor = price_history_floor()
+    if start < floor:
+        raise SystemExit(
+            f"start_date {start} is before the price-history floor {floor} "
+            f"(PROJECT_START_DATE − {config.PRICE_HISTORY_LOOKBACK_DAYS}d). "
+            "Lower PRICE_HISTORY_LOOKBACK_DAYS to extend further back."
+        )
+    return start
+
+
+def financials_history_floor() -> pd.Timestamp:
+    """Earliest quarter-end date retained in financials panels: PROJECT_START_DATE
+    minus FINANCIALS_HISTORY_LOOKBACK_QUARTERS quarters. Gives YoY / multi-quarter
+    signals a prior-year reading at the first backtest rebal date. Financials and
+    prices are the two artifacts allowed below PROJECT_START_DATE — universe / XBRL
+    stay floored at PROJECT_START_DATE."""
+    quarters = config.FINANCIALS_HISTORY_LOOKBACK_QUARTERS
+    return pd.Timestamp(config.PROJECT_START_DATE) - pd.DateOffset(months=quarters * 3)
+
+
 def quarter_end_dates(start_date: date, end_date: date) -> List[date]:
     dates = []
     for year in range(start_date.year, end_date.year + 1):

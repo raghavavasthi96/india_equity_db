@@ -113,9 +113,11 @@ def run_backtest(cfg: BacktestConfig, ctx: Optional[BacktestContext] = None) -> 
     span = ctx.trading_dates[(ctx.trading_dates >= start) & (ctx.trading_dates <= end)]
 
     trade_dates = {rd: trade_date_for(rd, cfg.rebal_offset, ctx) for rd in schedule}
-    trade_dates_set = {trade_dates[rd] for rd in schedule}
 
-    # Pre-compute targets at each rebal date (uses PIT snapshot from rebal_date)
+    # Pre-compute targets at each rebal date (uses PIT snapshot from rebal_date).
+    # Skip rebal dates that produce no target (empty pool / missing signal /
+    # snapshot lookup miss); their trade_date is dropped from the trading set
+    # too, so the daily loop only rebals on dates with valid targets.
     targets: Dict[pd.Timestamp, pd.Series] = {}
     raw_by_date: Dict[pd.Timestamp, pd.Series] = {}
     for rd in schedule:
@@ -124,6 +126,7 @@ def run_backtest(cfg: BacktestConfig, ctx: Optional[BacktestContext] = None) -> 
             continue
         targets[trade_dates[rd]] = w_final
         raw_by_date[trade_dates[rd]] = w_raw
+    trade_dates_set = set(targets.keys())
 
     # Daily loop
     w_curr = pd.Series({CASH: 1.0})

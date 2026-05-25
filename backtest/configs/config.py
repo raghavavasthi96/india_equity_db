@@ -108,6 +108,12 @@ class BacktestConfig:
     # Clip raw signal at ±winsor_sigma standard deviations before z-scoring.
     # Stops single-name outliers from dominating the cross-section.
 
+    reporting_lag_days: int = 60
+    # Calendar-day lag applied to financials_panel `date` (quarter-end) before
+    # using it in fundamental signals. SEBI allows 45 days quarterly / 60 days
+    # annual to file results — 60 covers quarterly comfortably, cuts it close
+    # on Q4. Bump to 75–90 if you want a wider safety margin.
+
     # ----- Caps -------------------------------------------------------------
     max_stock_wt: float = 0.20
     # Per-name weight cap. None disables. Engine raises if max_stock_wt × N < 1.

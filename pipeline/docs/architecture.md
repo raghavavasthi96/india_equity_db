@@ -7,6 +7,13 @@ Build survivorship-bias-free database of top 500 Indian listed companies (by mar
 
 All fetchers and the universe ranker respect `config.PROJECT_START_DATE = "2018-06-30"` as the single hard floor for historical data. This date is pinned to the earliest NSE SHP XBRL filing date with reliable coverage. CLI overrides may move the effective start **later** but never earlier. The floor is enforced uniformly by `utils.dates.enforce_project_floor()`.
 
+**Signal-warmup exceptions**: two artifacts extend below `PROJECT_START_DATE` so backtest signals have data at the first rebal date.
+
+- **Prices**: `fetch_prices.py` fetches `PRICE_HISTORY_LOOKBACK_DAYS` (default 365) of additional daily history. The extended floor is `utils.dates.price_history_floor()` / `enforce_price_history_floor()`. Sized for trailing-return signals (e.g. `momentum_12_1`).
+- **Financials**: `fetch_financials.py` retains `FINANCIALS_HISTORY_LOOKBACK_QUARTERS` (default 6) quarter-ends of prior data in both `financials_panel.csv` and `financials_annual_panel.csv`. The extended floor is `utils.dates.financials_history_floor()`. Sized for YoY / multi-quarter fundamental signals (e.g. `earnings_growth_yoy` needs a prior-year reading).
+
+Universe and XBRL still floor at `PROJECT_START_DATE`.
+
 ## Repo Layout
 
 Repository is split into two side-by-side modules sharing one environment (v0.6.0+).
@@ -201,10 +208,11 @@ Two naming conventions observed; both handled by the regex:
 `metadata.csv` → list of unique symbols.
 
 ### Logic
-1. Default fetch start = `config.PROJECT_START_DATE`. `--start-date YYYY-MM-DD` overrides (must be ≥ `PROJECT_START_DATE`; enforced via `utils.dates.enforce_project_floor`).
-2. Per-symbol effective start = `max(first_in_universe_date, default_start)`.
+1. Default fetch start = `config.PROJECT_START_DATE − PRICE_HISTORY_LOOKBACK_DAYS` (prices-only exception to the global floor — see "History Floor" above). `--start-date YYYY-MM-DD` overrides (must be ≥ the extended floor; enforced via `utils.dates.enforce_price_history_floor`).
+2. Per-symbol effective start = `max(first_in_universe_date − PRICE_HISTORY_LOOKBACK_DAYS, default_start)`. Gives late universe joiners the same signal-warm-up runway that day-one symbols get from the global buffer.
 3. Single batch call: `yf.download([f"{s}.NS" for s in symbols], start=..., end=today, auto_adjust=True, actions=False, group_by="ticker", threads=True)`.
 4. Per symbol, the `_slice_yf_for_symbol(prices_raw, sym)` helper slices the MultiIndex, keeps `open, high, low, close, volume`, melts to long. Symbols returning `None` (missing ticker / all-NaN) are routed to the bhavcopy fallback. Final panel is concatenated and written via `write_long_panel`. No merge with prior runs — each invocation rebuilds the panel from scratch.
+5. Bhavcopy fallback is **date-major**, not symbol-major: `_build_fallback_panels` computes per-symbol `[start, end]` windows once, takes the union range, loops days once via `fetch_bhavcopy(d)`, filters each day's EQ panel to the fallback-symbol set, then `groupby("symbol")` to produce per-symbol wide OHLCV panels honoring each symbol's own window. `_adjust_fallback_panel` then fetches corp actions and applies adjustments per symbol. Parquet reads scale as `O(N_days)` rather than `O(N_symbols × N_days)`.
 
 ### Storage Format — `prices_panel.csv`
 Long format: `date, symbol, parameter, value`.
@@ -225,7 +233,7 @@ Screener is the source of truth for **fundamentals only** (P&L, BS, CF). Shares 
 `metadata.csv` → symbols (NSE).
 
 ### Logic per symbol (executed in a thread pool, `--workers N` default from `config.FINANCIALS_WORKERS` = 8)
-The worker is a pure function `_worker(symbol, force, project_start_ts) -> {quarterly?, annual?, failure?}`; all CSV writes happen on the main thread after `as_completed`, so there are no write races. The `curl_cffi` session is created once per thread (via `threading.local`) and reused across all symbols/retries that thread handles — screener doesn't need a cookie warmup, but session reuse avoids paying the `chrome120` impersonation setup cost per call.
+The worker is a pure function `_worker(symbol, force, floor_ts) -> {quarterly?, annual?, failure?}`; all CSV writes happen on the main thread after `as_completed`, so there are no write races. The `curl_cffi` session is created once per thread (via `threading.local`) and reused across all symbols/retries that thread handles — screener doesn't need a cookie warmup, but session reuse avoids paying the `chrome120` impersonation setup cost per call.
 
 1. **Fetch & cache HTML** via `curl_cffi` with `impersonate="chrome120"`. Cached to `data/screener_cache/{symbol}.html` (path from `config.SCREENER_CACHE_DIR`). Re-downloaded if older than `SCREENER_CACHE_DAYS` (7 days) or `--force` passed. The `_has_tables(html)` validator is run on cache hits to detect dead pages (sections present but no date columns).
 
@@ -234,12 +242,12 @@ The worker is a pure function `_worker(symbol, force, project_start_ts) -> {quar
    - Annual sections (`id="profit-loss"`, `id="balance-sheet"`, `id="cash-flow"`): annual data. All dates forced to `31-Mar-YYYY` via `utils.dates.parse_annual_date`.
    - Line item names normalized to `snake_case`.
 
-3. **Filter quarterly data to `date >= PROJECT_START_DATE`** before appending to the panel. If quarterly data exists but all dates are before the cutoff, log `NoRecentData` to `data_gaps.csv` rather than silently discarding.
+3. **Filter quarterly data to `date >= financials_history_floor()`** (= `PROJECT_START_DATE − FINANCIALS_HISTORY_LOOKBACK_QUARTERS`) before appending to the panel. The pre-`PROJECT_START_DATE` buffer gives YoY / multi-quarter signals a prior reading at the first backtest rebal date. If quarterly data exists but all dates are before the floor, log `NoRecentData` to `data_gaps.csv` rather than silently discarding.
 
 4. **Log failures to `data/data_gaps.csv`** (via `utils.gaps.log_gap("fetch_financials", ...)`) in all modes:
    - `PageFetchFailed`: screener page could not be downloaded after all retries.
    - `ParseFailed`: HTML downloaded but no financial tables found.
-   - `NoRecentData`: quarterly section parsed but all dates fall before `PROJECT_START_DATE`.
+   - `NoRecentData`: quarterly section parsed but all dates fall before the financials floor.
    - `NoQuarterlyData`: page downloaded and annual data exists, but no quarterly P&L section.
    - `WorkerException`: any unhandled exception in the thread worker.
 
@@ -302,12 +310,12 @@ Long format. Columns: `date, symbol, parameter, value`.
 
 ### `financials_panel.csv`
 Long format. Columns: `date, symbol, parameter, value`.
-- `date`: quarter-end dates (Mar 31 / Jun 30 / Sep 30 / Dec 31), ≥ `PROJECT_START_DATE`
+- `date`: quarter-end dates (Mar 31 / Jun 30 / Sep 30 / Dec 31), ≥ `PROJECT_START_DATE − FINANCIALS_HISTORY_LOOKBACK_QUARTERS`
 - Common parameters: `total_revenue`, `operating_expenses`, `ebitda`, `ebit`, `depreciation`, `interest_expense`, `pbt`, `tax_implied`, `net_profit`, `eps`
 
 ### `financials_annual_panel.csv`
 Long format. Same columns.
-- `date`: always `31-Mar-YYYY` (Indian fiscal year end), ≥ `PROJECT_START_DATE`
+- `date`: always `31-Mar-YYYY` (Indian fiscal year end), ≥ `PROJECT_START_DATE − FINANCIALS_HISTORY_LOOKBACK_QUARTERS`
 - Additional parameters: BS items (`total_assets`, `net_equity`, `total_liabilities`, `total_debt`, `fixed_assets`, `cwip`, `investments`, `other_assets`, `other_liabilities`) and CF items (`cfo`, `cfi`, `cff`, `net_cash_flow`, `fcf`). Banks additionally include `deposits`.
 
 ---
@@ -415,7 +423,9 @@ Implemented as a `Validator` class — each `check_*(v: Validator)` function rec
 Organized into sections: Paths, Universe (incl. `PROJECT_START_DATE`), HTTP politeness, Parallelism, Caches.
 ```python
 # Universe
-PROJECT_START_DATE = "2018-06-30"   # hard floor for all history
+PROJECT_START_DATE = "2018-06-30"            # hard floor for universe / XBRL
+PRICE_HISTORY_LOOKBACK_DAYS = 365            # prices extend this far before PROJECT_START_DATE
+FINANCIALS_HISTORY_LOOKBACK_QUARTERS = 6     # financials extend this many quarter-ends before PROJECT_START_DATE
 UNIVERSE_SIZE = 500
 
 # HTTP politeness (per-thread sleeps; do not throttle aggregate rate)

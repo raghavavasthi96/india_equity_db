@@ -379,13 +379,10 @@ def _stats_section_html(summary):
         ("Benchmark CAGR", "cagr_benchmark"),
     ]
     risk_items = [
-        ("Gross vol", "vol_gross"),
         ("Net vol", "vol_net"),
         ("Benchmark vol", "vol_benchmark"),
-        ("Gross Sharpe", "sharpe_gross"),
         ("Net Sharpe", "sharpe_net"),
         ("Benchmark Sharpe", "sharpe_benchmark"),
-        ("Net Sortino", "sortino_net"),
     ]
     active_items = [
         ("Tracking error", "tracking_error"),
@@ -393,22 +390,15 @@ def _stats_section_html(summary):
         ("Hit rate (active)", "hit_rate_active"),
     ]
     dd_items = [
-        ("Gross max DD", "gross_max_drawdown"),
-        ("Gross DD start", "gross_max_drawdown_start"),
-        ("Gross DD end", "gross_max_drawdown_end"),
-        ("Gross DD recov. (d)", "gross_max_drawdown_recovery_days"),
         ("Net max DD", "net_max_drawdown"),
         ("Net DD start", "net_max_drawdown_start"),
         ("Net DD end", "net_max_drawdown_end"),
         ("Net DD recov. (d)", "net_max_drawdown_recovery_days"),
-        ("Bench max DD", "benchmark_max_drawdown"),
-        ("Bench DD start", "benchmark_max_drawdown_start"),
-        ("Bench DD end", "benchmark_max_drawdown_end"),
-        ("Bench DD recov. (d)", "benchmark_max_drawdown_recovery_days"),
     ]
     portfolio_items = [
         ("Avg # positions", "avg_n_positions"),
-        ("Avg 1-way turnover", "avg_one_way_turnover"),
+        ("Turnover / rebal", "turnover_per_rebal"),
+        ("Turnover annualised", "turnover_annualized"),
         ("T-cost bps / rebal", "tcost_bps_per_rebal"),
         ("T-cost bps annualised", "tcost_bps_annualized"),
     ]
@@ -431,6 +421,10 @@ def _header_html(cfg):
         ("Signal", cfg.signal_name or (
             getattr(cfg.signal_fn, "__name__", None) or "—"
         )),
+        ("Gamma", f"{cfg.tilt_gamma:g}" if cfg.tilt_gamma is not None else "—"),
+        ("Signal top N", f"{int(cfg.signal_top_n)}" if cfg.signal_top_n is not None else "—"),
+        ("Signal top quantile",
+         f"{cfg.signal_top_quantile:.0%}" if cfg.signal_top_quantile is not None else "—"),
         ("Max stock wt", f"{cfg.max_stock_wt:.0%}" if cfg.max_stock_wt else "—"),
         ("Cash buffer", f"{cfg.cash_buffer:.0%}"),
         ("Benchmark", cfg.benchmark),

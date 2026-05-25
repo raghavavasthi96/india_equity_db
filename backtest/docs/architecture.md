@@ -88,6 +88,8 @@ between rebalances (daily t):
 
 Trading convention: snapshot at `rebal_date`, trade at `rebal_date + rebal_offset` (default T+1) at close. T-cost inputs (mcap, ADV, ff%) sampled at `trade_date`, not `rebal_date`.
 
+**Schedule snap**: each calendar candidate (month/quarter/year-end from `pd.date_range`) snaps to the **nearest trading date ≤ candidate**. If no trading day exists ≤ candidate (candidate predates the available price panel), it falls **forward** to the first trading day ≥ candidate instead. This guarantees that runs at different frequencies sharing the same `cfg.start` seed on the same trading day — so the benchmark span is identical across e.g. monthly and quarterly variants of an otherwise-identical config.
+
 ## 6. `BacktestConfig`
 
 | Field | Default | Purpose |
@@ -229,9 +231,9 @@ Drawdown series and calendar-year returns are derived from `returns.csv` on-the-
 
 ## 14. `summary.json` contents
 
-CAGR (gross / net / bench), annualised vol (gross / net / bench), Sharpe (gross / net / bench), Sortino (net), hit rate, avg N positions, avg turnover, **tcost_bps_annualized**, tcost_bps_per_rebal, tracking error, **information ratio**, **calendar_year_returns** (dict by year: gross / net / bench / active).
+CAGR (gross / net / bench), annualised vol (gross / net / bench), Sharpe (gross / net / bench), Sortino (net), hit rate, avg N positions, `turnover_per_rebal` (mean one-way Δw/2 across rebalances), `turnover_annualized` (sum of one-way turnover divided by years elapsed), **tcost_bps_per_rebal**, **tcost_bps_annualized**, tracking error, **information ratio**, **calendar_year_returns** (dict by year: gross / net / bench / active).
 
-Drawdown stats reported for all three series (gross portfolio, net portfolio, benchmark): `{series}_max_drawdown`, `{series}_max_drawdown_start`, `{series}_max_drawdown_end`, `{series}_max_drawdown_recovery_days`.
+Drawdown stats computed for all three series (gross portfolio, net portfolio, benchmark) and persisted in `summary.json` as `{series}_max_drawdown`, `{series}_max_drawdown_start`, `{series}_max_drawdown_end`, `{series}_max_drawdown_recovery_days`. The dashboard stats table surfaces only the *net* drawdown block (gross and benchmark DD are visible in the overlay chart but redundant in the table).
 
 ## 15. HTML dashboard
 
