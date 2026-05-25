@@ -18,13 +18,14 @@ mom_lvol = compose(
 
 cfg = BacktestConfig(
     weighting="ffmcap_tilt",
-    tilt_gamma=1.0,
+    tilt_gamma=1.5,
     rebal_freq="Q",
     signal_fn=mom_lvol,
     signal_name="mom_lvol_50_50",
-    signal_top_quantile=0.3,
+    signal_top_n = 50,
+    signal_top_quantile=None,
     max_stock_wt=0.10,
-    run_id="mom_lvol_q",
+    run_id="mom_lvol_q_top50",
 )
 
 auto_open = False

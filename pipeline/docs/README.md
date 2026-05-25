@@ -20,7 +20,9 @@ pip install -r requirements.txt
 All tuneable constants live in `pipeline/configs/config.py`. The most commonly changed settings:
 
 ```python
-PROJECT_START_DATE = "2018-06-30"  # hard floor for all history; do not lower
+PROJECT_START_DATE = "2018-06-30"  # hard floor for universe and XBRL
+PRICE_HISTORY_LOOKBACK_DAYS = 365  # prices_panel extends back this far before PROJECT_START_DATE (signal lookback runway)
+FINANCIALS_HISTORY_LOOKBACK_QUARTERS = 6  # financials_panel keeps this many quarter-ends before PROJECT_START_DATE (YoY signal runway)
 UNIVERSE_SIZE  = 500               # top-N by market cap per quarter
 SCREENER_CACHE_DAYS = 7            # re-download screener HTML if older than this
 XBRL_INDEX_CACHE_DAYS = 1          # re-fetch NSE filings index if older than this
@@ -35,7 +37,7 @@ FINANCIALS_WORKERS = 8     # parallel threads for fetch_financials.py
 
 Workers cap practical parallelism. Per-thread `polite_sleep` does *not* throttle aggregate request rate — peak concurrent requests to NSE is bounded by `XBRL_WORKERS`. NSE/Akamai typically tolerate ~8–16 concurrent connections per IP before 403/429; pushing higher buys nothing without rotating IPs.
 
-`PROJECT_START_DATE` is the single source of truth for history depth across the entire pipeline. All fetchers and the universe ranker respect it. Do not lower it without re-validating XBRL coverage for the new range.
+`PROJECT_START_DATE` is the single source of truth for history depth across the universe ranker and XBRL fetcher. Do not lower it without re-validating XBRL coverage for the new range. Two artifacts extend earlier as signal-warmup buffers: `fetch_prices.py` fetches `PROJECT_START_DATE − PRICE_HISTORY_LOOKBACK_DAYS` of additional history, and `fetch_financials.py` retains `FINANCIALS_HISTORY_LOOKBACK_QUARTERS` quarter-ends prior, so trailing-lookback and YoY signals have data on day-one of the backtest.
 
 ---
 
@@ -148,7 +150,7 @@ python -m pipeline.universe --bootstrap --refresh-universe
 | `--force` | `fetch_shp_xbrl.py`, `fetch_financials.py` | Ignore cache; re-fetch all XBRL files / screener HTML from scratch |
 | `--start-date YYYY-MM-DD` | `universe.py` | Override start date for universe history (must be ≥ `PROJECT_START_DATE`) |
 | `--start-date YYYY-MM-DD` | `fetch_shp_xbrl.py` | Skip filings before this date (must be ≥ `PROJECT_START_DATE`) |
-| `--start-date YYYY-MM-DD` | `fetch_prices.py` | Override fetch start date (must be ≥ `PROJECT_START_DATE`) |
+| `--start-date YYYY-MM-DD` | `fetch_prices.py` | Override fetch start date (must be ≥ `PROJECT_START_DATE − PRICE_HISTORY_LOOKBACK_DAYS`; prices and financials are the only artifacts allowed below the global project floor) |
 | `--workers N` | `fetch_shp_xbrl.py`, `fetch_financials.py` | Override parallel worker threads (defaults from `config.XBRL_WORKERS` / `config.FINANCIALS_WORKERS`, both 8; safe band is 8–16, beyond that NSE/Akamai throttle) |
 | `--no-fallback` | `fetch_prices.py` | Skip bhavcopy fallback for symbols yfinance returns empty (yfinance-only mode) |
 
@@ -185,8 +187,8 @@ All files written to `pipeline/data/`. Panels use **long format**: `date, symbol
 | `xbrl_cache/{SYMBOL}/{YYYY-MM-DD}_{recordId}.xml` | Raw XBRL files, cached permanently. |
 | `bhavcopy_cache/{YYYYMMDD}.parquet` | Daily EQ bhavcopy snapshots cached as parquet. Fetched once per trading day; re-used on subsequent runs. |
 | `prices_panel.csv` | Daily OHLCV, long format. `parameter` ∈ {open, high, low, close, volume}. Primary source: yfinance `auto_adjust=True`. Fallback for yfinance-empty symbols (typically merged/delisted, e.g. HDFC): daily NSE bhavcopy back-adjusted with splits/bonuses/dividends from NSE corporate-actions API (matches yfinance auto-adjust semantics). Mixed-source panel; per-symbol provenance is implicit via `corporate_action_adjustments.csv`. |
-| `financials_panel.csv` | Quarterly P&L from screener.in. `date` = quarter-end (Mar 31 / Jun 30 / Sep 30 / Dec 31). Rows filtered to `date >= PROJECT_START_DATE`. Banks include `financing_profit`, `financing_margin`, `gross_npa`, `net_npa` instead of `ebitda`/`ebit`. |
-| `financials_annual_panel.csv` | Annual BS + CF. `date` = 31-Mar-YYYY (Indian FY end). Rows filtered to `date >= PROJECT_START_DATE`. Banks include `deposits` in BS. |
+| `financials_panel.csv` | Quarterly P&L from screener.in. `date` = quarter-end (Mar 31 / Jun 30 / Sep 30 / Dec 31). Rows filtered to `date >= PROJECT_START_DATE − FINANCIALS_HISTORY_LOOKBACK_QUARTERS` (default ~18 months prior, so YoY signals have a prior reading at backtest day-one). Banks include `financing_profit`, `financing_margin`, `gross_npa`, `net_npa` instead of `ebitda`/`ebit`. |
+| `financials_annual_panel.csv` | Annual BS + CF. `date` = 31-Mar-YYYY (Indian FY end). Rows filtered to `date >= PROJECT_START_DATE − FINANCIALS_HISTORY_LOOKBACK_QUARTERS`. Banks include `deposits` in BS. |
 | `validation_report.txt` | Last validation run output |
 | `screener_cache/{SYMBOL}.html` | Cached screener.in HTML (refreshed every 7 days) |
 

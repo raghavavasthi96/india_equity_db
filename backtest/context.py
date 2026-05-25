@@ -177,12 +177,32 @@ def build_rebal_schedule(cfg: BacktestConfig, ctx: BacktestContext) -> pd.Dateti
     freq_map = {"M": "ME", "Q": "QE", "A": "YE"}
     pandas_freq = freq_map.get(cfg.rebal_freq, cfg.rebal_freq)
     candidates = pd.date_range(start=start, end=end, freq=pandas_freq)
-    # Snap each candidate to nearest trading date <= candidate
+    # Snap each candidate to nearest trading date <= candidate. Two fall-forward
+    # cases override the default snap-backward:
+    #   (a) no trading date <= candidate (candidate predates price panel);
+    #   (b) snap-backward lands strictly before the first universe snapshot
+    #       (e.g. candidate = 2018-06-30 Sat snaps back to 2018-06-29 Fri, but
+    #       the first universe snapshot is 2018-06-30 — snap_asof would return
+    #       empty and the rebal would produce no target).
+    # Both cases land on the first trading date >= candidate, keeping all rebal
+    # frequencies that share a `cfg.start` seeded on the same day.
+    first_snap = (
+        ctx.rebal_quarter_ends[0] if len(ctx.rebal_quarter_ends) else None
+    )
     snapped = []
     for d in candidates:
         eligible = ctx.trading_dates[ctx.trading_dates <= d]
         if len(eligible) > 0:
-            snapped.append(eligible[-1])
+            cand = eligible[-1]
+            if first_snap is not None and cand < first_snap:
+                forward = ctx.trading_dates[ctx.trading_dates >= d]
+                if len(forward) > 0:
+                    cand = forward[0]
+            snapped.append(cand)
+        else:
+            forward = ctx.trading_dates[ctx.trading_dates >= d]
+            if len(forward) > 0:
+                snapped.append(forward[0])
     return pd.DatetimeIndex(snapped).unique()
 
 

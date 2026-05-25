@@ -4,6 +4,113 @@ Backtest module changelog (v0.5.0+) lives in [../../backtest/docs/changelog.md](
 The v0.6.0 refactor that split pipeline and backtest into separate modules is
 recorded in the root [../../CHANGELOG.md](../../CHANGELOG.md).
 
+## v0.4.4 — 2026-05-25
+
+Bhavcopy fallback inverted from symbol-major to date-major scan.
+
+### Why
+Previous `_fallback_one` called `fetch_daily_range(symbol, …)` per fallback
+symbol, which looped every trading day in the symbol's window and filtered one
+bhavcopy for one row. Bhavcopy parquets are cached, so network cost was fine,
+but each subsequent fallback symbol still paid `N_days` parquet reads + filters
+to extract a single row per day from a panel that already held every EQ symbol.
+Cost scaled as `N_fallback_symbols × N_days` parquet reads for no reason.
+
+### Changed
+- **`fetch_prices.py::_build_fallback_panels(symbols, default_start, today, session)`**
+  — new helper. Computes per-symbol `[start, end]` windows once, takes the
+  union range, loops days once, loads each daily bhavcopy via
+  `fetch_bhavcopy(d)`, filters to the fallback-symbol set, concats chunks,
+  then `groupby("symbol")` to produce `dict[symbol → wide OHLCV df]` honoring
+  each symbol's own window. Parquet reads drop from
+  `N_symbols × N_days` to `N_days`.
+- **`fetch_prices.py::_adjust_fallback_panel(symbol, raw_df, …)`** — replaces
+  `_fallback_one`. Takes a pre-built panel, fetches corp actions, applies
+  adjustments, returns long-format. Corp-action fetch (`get_adjustments`)
+  remains per-symbol — unavoidable, different endpoint.
+- Main fallback block: builds panels once, then iterates fallback symbols only
+  for corp-action fetch + adjustment. `bhavcopy_no_rows_in_range` gap log
+  moved out of the (now removed) per-symbol fetch helper and into the main
+  loop.
+
+### Operational notes
+- No schema changes. Output identical to v0.4.3 for the same inputs.
+- Re-run not required; this is a performance refactor, not a correctness fix.
+
+## v0.4.3 — 2026-05-25
+
+Financials lookback buffer for YoY / multi-quarter signal warm-up.
+
+### Added
+- **`config.FINANCIALS_HISTORY_LOOKBACK_QUARTERS`** (default `6`). Extends
+  the `financials_panel.csv` and `financials_annual_panel.csv` retention
+  window backward by this many quarter-ends before `PROJECT_START_DATE`.
+  Universe and XBRL remain floored at `PROJECT_START_DATE` — financials
+  joins prices as a signal-warmup exception to the global floor.
+- `utils.dates.financials_history_floor()` — returns the extended floor as a
+  `pd.Timestamp` (= `PROJECT_START_DATE − N quarters`, computed via
+  `pd.DateOffset(months=N*3)`).
+
+### Why
+`earnings_growth_yoy` and similar fundamental signals compute YoY changes
+against a prior-year filing. With financials previously floored at
+`PROJECT_START_DATE = 2018-06-30`, the "prior" row didn't exist until
+roughly mid-2019 (depending on the `reporting_lag_days` setting in the
+backtest config), so the YoY signal was effectively absent for the first
+~14 months of backtest. Retaining 6 quarters of pre-floor history gives
+day-one prior-year readings with a 1-quarter buffer for missed filings.
+
+### Changed
+- `fetch_financials.py::_save_panel` and `_worker` now filter against
+  `financials_history_floor()` instead of `PROJECT_START_DATE`. The
+  `NoRecentData` data-gap message reflects the new floor.
+
+### Operational notes
+- **Re-fetch required**: existing `financials_panel.csv` only goes back to
+  `PROJECT_START_DATE`. Cached screener HTML already contains the full
+  history — re-run `python -m pipeline.fetch_financials --force` to re-parse
+  and pick up the pre-floor quarters.
+- No schema changes; just additional rows in both financials panels.
+
+## v0.4.2 — 2026-05-25
+
+Prices-only lookback buffer for backtest signal warm-up.
+
+### Added
+- **`config.PRICE_HISTORY_LOOKBACK_DAYS`** (default `365`). Extends the
+  `prices_panel.csv` fetch window backward by this many days before
+  `PROJECT_START_DATE` (and before each symbol's `first_in_universe_date`).
+  Universe, XBRL, and financials remain floored at `PROJECT_START_DATE` —
+  this is a **prices-only** exception.
+- `utils.dates.price_history_floor()` and `enforce_price_history_floor()` —
+  the prices-side analogues of `enforce_project_floor`. Lower bound for any
+  `fetch_prices.py --start-date` override.
+
+### Why
+Backtest signals with trailing lookbacks (e.g. `momentum_12_1` reads the
+12-month-trailing close) need ~252 trading days of price history *before*
+their first scoring date. Without a buffer, the first rebal date had no
+prior closes and signal-required weighting modes (`ffmcap_tilt`,
+`score_weighted`) raised at run time. Pulling history one year prior to
+PROJECT_START_DATE gives every signal a warm-up runway at the very first
+rebal date, regardless of rebal frequency.
+
+### Changed
+- `fetch_prices.py` defaults: yfinance batch and bhavcopy fallback both start
+  at `PROJECT_START_DATE − PRICE_HISTORY_LOOKBACK_DAYS`. Per-symbol start in
+  `_symbol_date_range` shifts to `first_seen_date − lookback` (still floored
+  at the absolute lookback floor), so late universe joiners also get
+  pre-entry history.
+- `fetch_prices.py --start-date` now validates against `price_history_floor()`
+  (the extended floor), not `PROJECT_START_DATE`. Error message updated.
+
+### Operational notes
+- **Re-fetch required**: existing `prices_panel.csv` only goes back to
+  `PROJECT_START_DATE`. Re-run `python -m pipeline.fetch_prices` to pick up
+  the lookback rows. Backtest wide-pivot caches (`backtest/data/cache/*.parquet`)
+  invalidate on source mtime automatically — no manual cache clearing.
+- No schema changes; just additional rows.
+
 ## v0.4.1 — 2026-05-25
 
 Follow-up to v0.4.0: pipeline ergonomics + session reuse. No data/schema changes.

@@ -4,6 +4,46 @@ Per-module changelogs:
 - [`pipeline/docs/changelog.md`](pipeline/docs/changelog.md) — pipeline (v0.1–v0.4).
 - [`backtest/docs/changelog.md`](backtest/docs/changelog.md) — backtest engine (v0.5.0+).
 
+## v0.6.2 — 2026-05-25
+
+Financials lookback buffer so YoY / multi-quarter fundamental signals
+(e.g. `earnings_growth_yoy`) have a prior-year reading at the first
+backtest rebal date. See [`pipeline/docs/changelog.md`](pipeline/docs/changelog.md) v0.4.3.
+
+### Pipeline
+- **`FINANCIALS_HISTORY_LOOKBACK_QUARTERS`** (default 6): `financials_panel.csv`
+  and `financials_annual_panel.csv` now retain this many quarter-ends of
+  pre-`PROJECT_START_DATE` data. Universe and XBRL still floor at
+  `PROJECT_START_DATE`; financials joins prices as a signal-warmup exception.
+  Re-run `python -m pipeline.fetch_financials --force` once to re-parse cached
+  HTML and pick up the pre-floor rows.
+
+## v0.6.1 — 2026-05-25
+
+Coordinated pipeline + backtest patch to make signal-driven strategies
+work cleanly from day one and to make benchmark stats identical across
+rebal frequencies. See per-module changelogs:
+- [`pipeline/docs/changelog.md`](pipeline/docs/changelog.md) v0.4.2
+- [`backtest/docs/changelog.md`](backtest/docs/changelog.md) v0.5.1
+
+### Pipeline
+- **`PRICE_HISTORY_LOOKBACK_DAYS`** (default 365): `prices_panel.csv` now
+  fetches one year of pre-`PROJECT_START_DATE` data so backtest signals
+  (`momentum_12_1`, etc.) have a lookback runway at the first rebal date.
+  Prices-only exception — universe / XBRL / financials still floor at
+  `PROJECT_START_DATE`. Re-run `python -m pipeline.fetch_prices` once to
+  pick up the lookback rows.
+
+### Backtest
+- **Cross-frequency comparability fix**: `build_rebal_schedule` falls forward
+  when a candidate predates the price panel, so M / Q / A runs sharing the
+  same `cfg.start` seed on the same trading day and load the same benchmark
+  window.
+- **Metrics rename**: `avg_one_way_turnover` → `turnover_per_rebal`; new
+  `turnover_annualized` companion.
+- **Dashboard**: gross / benchmark DD blocks dropped from the stats table
+  (drawdown chart unchanged); portfolio card adds "Turnover annualised".
+
 ## v0.6.0 — 2026-05-25
 
 Repository split into two side-by-side modules sharing one environment:

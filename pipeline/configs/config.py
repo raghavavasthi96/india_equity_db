@@ -19,6 +19,20 @@ REBALANCE_FREQ = "Q"
 # coverage for the new range.
 PROJECT_START_DATE = "2018-06-30"
 
+# Prices-only history buffer fetched *before* PROJECT_START_DATE. Universe and
+# XBRL still floor at PROJECT_START_DATE — only `prices_panel` (and downstream
+# `close_wide` / `adv_30d_inr` caches) extend earlier. Sized to the longest
+# signal lookback used by backtests (e.g. momentum_12_1 needs ~12mo of trailing
+# closes at the first rebal date).
+PRICE_HISTORY_LOOKBACK_DAYS = 365
+
+# Financials-only history buffer kept *before* PROJECT_START_DATE. `financials_panel`
+# and `financials_annual_panel` retain this many quarter-ends of prior data so YoY /
+# multi-quarter signals (e.g. earnings_growth_yoy) have a "prior" reading available
+# at the first rebal date. Sized to cover the longest fundamental lookback used by
+# backtests (YoY = 4q + filing-lag buffer ≈ 5q; 6q gives one quarter of slack).
+FINANCIALS_HISTORY_LOOKBACK_QUARTERS = 6
+
 # ---------------------------------------------------------------------------
 # HTTP politeness
 # ---------------------------------------------------------------------------

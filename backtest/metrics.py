@@ -132,7 +132,9 @@ def compute_summary(returns_df, weights_df, turnover_df, tcost_df, cfg) -> dict:
         "avg_n_positions": float(
             (weights_df.drop(columns=["CASH"], errors="ignore") > 1e-9).sum(axis=1).mean()
         ),
-        "avg_one_way_turnover": float(turnover_df["one_way_turnover"].mean())
+        "turnover_per_rebal": float(turnover_df["one_way_turnover"].mean())
+        if len(turnover_df) else 0.0,
+        "turnover_annualized": float(turnover_df["one_way_turnover"].sum() / max(years, 1e-9))
         if len(turnover_df) else 0.0,
         "tcost_bps_per_rebal": float(tcost_df["drag_bps"].mean())
         if len(tcost_df) else 0.0,
