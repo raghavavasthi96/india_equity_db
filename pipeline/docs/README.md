@@ -67,7 +67,7 @@ python -m pipeline.fetch_prices --symbols RELIANCE,TCS,ZYDUSWELL
 python -m pipeline.validate
 ```
 
-Expected outcome: `validate.py` exits with warnings about universe size (expected — only 3 symbols), but no structural failures. All 6 scripts complete without errors. Verify the RELIANCE Mar-2018 row in `shares_outstanding.csv`: `total_shares=6334651022`, `promoter_shares=2926202148`, `free_float_shares=3408448874`.
+Expected outcome: `validate.py` exits with warnings about universe size (expected — only 3 symbols), but no structural failures. All 7 scripts complete without errors. Verify the RELIANCE Mar-2018 row in `shares_outstanding.csv`: `total_shares=6334651022`, `promoter_shares=2926202148`, `free_float_shares=3408448874`.
 
 ### Full Run
 
@@ -88,10 +88,13 @@ python -m pipeline.universe
 # Step 4: Fetch financials from screener.in (quarterly + annual P&L / BS / CF)
 python -m pipeline.fetch_financials
 
-# Step 5: Fetch adjusted prices (yfinance, for total-return series)
+# Step 5: Resolve NSE/BSE unified industry classification (reads the screener cache from step 4)
+python -m pipeline.fetch_sectors
+
+# Step 6: Fetch adjusted prices (yfinance, for total-return series)
 python -m pipeline.fetch_prices
 
-# Step 6: Validate
+# Step 7: Validate
 python -m pipeline.validate
 ```
 
@@ -105,6 +108,7 @@ Approximate runtimes (500 symbols, direct connection):
 | `fetch_shp_xbrl.py` | 45–90 min (first run, 4 workers — ~15K XBRL downloads; cached on re-run) |
 | `universe.py` (ranking) | 5–10 min (33 bhavcopy fetches, cached after first run) |
 | `fetch_financials.py` | 45–60 min |
+| `fetch_sectors.py` | < 1 min on a warm screener cache (parses local HTML; network only for symbols with no cached page) |
 | `fetch_prices.py` | 5–10 min yfinance batch + ~15–30 min cold bhavcopy fallback per delisted symbol (cached after first run) |
 | `validate.py` | < 1 min |
 
@@ -123,6 +127,7 @@ python -m pipeline.universe --bootstrap --refresh-universe   # refresh symbol li
 python -m pipeline.fetch_shp_xbrl                           # pick up any new quarterly filings
 python -m pipeline.universe                                  # re-rank with updated shares; narrows metadata
 python -m pipeline.fetch_financials                          # refresh financials (runs against ranked metadata)
+python -m pipeline.fetch_sectors                             # refresh industry classification
 python -m pipeline.fetch_prices                              # refresh adjusted prices
 python -m pipeline.validate
 ```
@@ -136,6 +141,9 @@ python -m pipeline.fetch_shp_xbrl --force
 # Re-download all screener HTML
 python -m pipeline.fetch_financials --force
 
+# Re-download the BSE scrip master used by the sector fallback
+python -m pipeline.fetch_sectors --force
+
 # Re-build universe from scratch (also re-seeds metadata)
 python -m pipeline.universe --bootstrap --refresh-universe
 ```
@@ -147,7 +155,8 @@ python -m pipeline.universe --bootstrap --refresh-universe
 | `--symbols A,B,C` | all | Run only these NSE symbols (comma-separated, no spaces) |
 | `--bootstrap` | `universe.py` | Write flat metadata.csv with all symbols (no ranking). Must run before `fetch_shp_xbrl.py` on a fresh build. |
 | `--refresh-universe` | `universe.py` | Force re-download of raw NSE equity list |
-| `--force` | `fetch_shp_xbrl.py`, `fetch_financials.py` | Ignore cache; re-fetch all XBRL files / screener HTML from scratch |
+| `--force` | `fetch_shp_xbrl.py`, `fetch_financials.py`, `fetch_sectors.py` | Ignore cache; re-fetch all XBRL files / screener HTML / the BSE scrip master from scratch |
+| `--offline` | `fetch_sectors.py` | Resolve from local caches and the override table only; make no network requests |
 | `--start-date YYYY-MM-DD` | `universe.py` | Override start date for universe history (must be ≥ `PROJECT_START_DATE`) |
 | `--start-date YYYY-MM-DD` | `fetch_shp_xbrl.py` | Skip filings before this date (must be ≥ `PROJECT_START_DATE`) |
 | `--start-date YYYY-MM-DD` | `fetch_prices.py` | Override fetch start date (must be ≥ `PROJECT_START_DATE − PRICE_HISTORY_LOOKBACK_DAYS`; prices and financials are the only artifacts allowed below the global project floor) |
@@ -189,10 +198,14 @@ All files written to `pipeline/data/`. Panels use **long format**: `date, symbol
 | `prices_panel.csv` | Daily OHLCV, long format. `parameter` ∈ {open, high, low, close, volume}. Primary source: yfinance `auto_adjust=True`. Fallback for yfinance-empty symbols (typically merged/delisted, e.g. HDFC): daily NSE bhavcopy back-adjusted with splits/bonuses/dividends from NSE corporate-actions API (matches yfinance auto-adjust semantics). Mixed-source panel; per-symbol provenance is implicit via `corporate_action_adjustments.csv`. |
 | `financials_panel.csv` | Quarterly P&L from screener.in. `date` = quarter-end (Mar 31 / Jun 30 / Sep 30 / Dec 31). Rows filtered to `date >= PROJECT_START_DATE − FINANCIALS_HISTORY_LOOKBACK_QUARTERS` (default ~18 months prior, so YoY signals have a prior reading at backtest day-one). Banks include `financing_profit`, `financing_margin`, `gross_npa`, `net_npa` instead of `ebitda`/`ebit`. |
 | `financials_annual_panel.csv` | Annual BS + CF. `date` = 31-Mar-YYYY (Indian FY end). Rows filtered to `date >= PROJECT_START_DATE − FINANCIALS_HISTORY_LOOKBACK_QUARTERS`. Banks include `deposits` in BS. |
+| `sector_classification.csv` | NSE/BSE unified 4-level industry classification, one row per metadata symbol. Columns: `symbol, isin, macro_sector, sector, industry, basic_industry, macro_code, sector_code, industry_code, basic_industry_code, source, as_of`. `source` ∈ {`screener`, `bse`, `nse_bulk`, `override`, `unresolved`}. Written by `fetch_sectors.py`; consumed by the backtest for sector caps, breakdown and attribution. Current snapshot, **not** point-in-time. |
+| `bse_scrip_master.json` | BSE equity scrip master (Active + Delisted + Suspended), cached 7 days. Maps ISIN / BSE ticker → scrip code for the sector fallback. |
 | `validation_report.txt` | Last validation run output |
 | `screener_cache/{SYMBOL}.html` | Cached screener.in HTML (refreshed every 7 days) |
 
-All paths above are relative to `pipeline/data/`.
+All paths above are relative to `pipeline/data/`, except the hand-curated
+`pipeline/reference/sector_overrides.csv`, which is tracked in git (`data/` is
+gitignored).
 
 ### Reading panels in Python
 

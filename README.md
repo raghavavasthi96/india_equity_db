@@ -4,7 +4,8 @@ Two side-by-side Python modules sharing one environment:
 
 - **[`pipeline/`](pipeline/docs/README.md)** — survivorship-bias-free database of NSE
   top-500 companies (Mar 2018+). Outputs long-format CSVs for prices, financials,
-  shares outstanding, and quarterly universe history.
+  shares outstanding, quarterly universe history, and the NSE/BSE unified
+  industry classification.
 - **[`backtest/`](backtest/docs/README.md)** — flexible, point-in-time backtest
   engine layered on the pipeline data. Renders a self-contained HTML dashboard
   per run.

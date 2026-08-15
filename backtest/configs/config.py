@@ -56,7 +56,7 @@ class BacktestConfig:
     start: Optional[str] = "2018-06-30"
     # ISO date string. Backtest start. None = use first trading date in panel.
 
-    end: Optional[str] = "2026-04-30"
+    end: Optional[str] = None
     # ISO date string. Backtest end. None = use last trading date.
 
     # ----- Rebalance schedule -----------------------------------------------
@@ -119,10 +119,21 @@ class BacktestConfig:
     # Per-name weight cap. None disables. Engine raises if max_stock_wt × N < 1.
 
     max_sector_wt: Optional[float] = None
-    # Per-sector weight cap. Stub: requires sector_map_csv; logs warning if absent.
+    # Per-sector weight cap, applied to whichever taxonomy level `sector_level`
+    # names. None disables. Engine raises if the cap is infeasible.
 
     sector_map_csv: Optional[str] = None
-    # Path to CSV with columns `symbol,sector`. Loaded once at context build.
+    # Path to the symbol -> classification CSV. None = pipeline's
+    # `sector_classification.csv` (written by `python -m pipeline.fetch_sectors`).
+    # A bare two-column `symbol,sector` CSV is also accepted.
+
+    sector_level: str = "sector"
+    # Which level of the NSE/BSE unified taxonomy groups the portfolio:
+    #   macro_sector    (12 values)  e.g. Energy
+    #   sector          (22 values)  e.g. Oil, Gas & Consumable Fuels   [default]
+    #   industry        (~55)        e.g. Petroleum Products
+    #   basic_industry  (~152)       e.g. Refineries & Marketing
+    # Drives sector caps, the dashboard breakdown, and sector attribution.
 
     max_size_bucket_wt: Optional[dict] = None
     # Dict `{bucket_name: cap}`, e.g. {"small": 0.20}. Buckets per `size_buckets`.

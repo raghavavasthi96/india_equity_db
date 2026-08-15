@@ -59,3 +59,14 @@ BHAVCOPY_CACHE_DIR = os.path.join(DATA_DIR, "bhavcopy_cache")
 
 NSE_CORPACT_CACHE_DIR = os.path.join(DATA_DIR, "nse_corpact_cache")
 NSE_CORPACT_CACHE_DAYS = 7
+
+# BSE scrip master (ISIN / scrip_id -> scrip code), used only by fetch_sectors as a
+# fallback for symbols whose screener page carries no industry classification.
+BSE_MASTER_CACHE_FILE = os.path.join(DATA_DIR, "bse_scrip_master.json")
+BSE_MASTER_CACHE_DAYS = 7
+
+# ---------------------------------------------------------------------------
+# Reference data (tracked in git, unlike DATA_DIR)
+# ---------------------------------------------------------------------------
+REFERENCE_DIR = os.path.join(_PKG_ROOT, "reference")
+SECTOR_OVERRIDES_FILE = os.path.join(REFERENCE_DIR, "sector_overrides.csv")

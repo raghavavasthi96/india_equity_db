@@ -1,5 +1,5 @@
 """
-fetch_financials.py — Script 2: Download consolidated quarterly financials from screener.in.
+fetch_financials.py — Download consolidated quarterly financials from screener.in.
 
 Parses financial tables from the public HTML company page (no login required).
 HTML cached per symbol; re-downloaded when older than SCREENER_CACHE_DAYS.

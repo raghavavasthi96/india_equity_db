@@ -1,5 +1,67 @@
 # Backtest changelog
 
+## v0.5.4 — 2026-08-15
+
+Sector caps, breakdown and attribution activated by the new pipeline
+classification (`pipeline/docs/changelog.md` v0.4.5).
+
+### Added
+- **`attribution.py`** — `sector_weights`, `sector_contribution`,
+  `sector_active_weights`, `build_sector_frames` (memoised on the result so the
+  writer and dashboard share one computation), and `verify_identities`.
+- **Two new outputs** per run: `sector_attribution.csv`
+  (`date, sector, weight, contrib_gross, contrib_tcost, contrib_net,
+  cum_contrib_net_pct`) and `sector_active_weights.csv`
+  (`date, sector, portfolio_wt, benchmark_wt, active_wt`).
+- **`cfg.sector_level`** — pick the grouping level (`macro_sector` / `sector` /
+  `industry` / `basic_industry`); default `sector` (22 buckets).
+- **`context.benchmark_weights_asof`** — the PIT ff-mcap benchmark weight vector,
+  extracted from `dashboard._active_weights_fig` so the stock-level and
+  sector-level active weights can't drift apart.
+- **`summary.json`** gains `sector_level`, `sector_contribution_net`,
+  `sector_active_wt_end`, `sector_attribution_residuals`.
+- **Dashboard**: sector weight area chart, cumulative net contribution by sector,
+  and active sector tilt vs ff-mcap top-500 replace the old
+  "Sector breakdown unavailable" note. Header band gains a max-sector-weight cell
+  alongside the existing max-stock-weight one, labelled with the active
+  `sector_level`.
+- **`rebalance_diagnostics.csv`** gains a `sector` column.
+
+### Changed
+- `cfg.sector_map_csv` now defaults to the pipeline's
+  `sector_classification.csv` when `None`, so existing presets light up with no
+  edits. A bare two-column `symbol,sector` CSV is still accepted.
+- `weights.apply_caps` raises on an infeasible sector cap
+  (`max_sector_wt × n_sectors < 1`), mirroring the existing stock-cap guard,
+  instead of spinning to the 20-iteration non-convergence error.
+
+### Notes
+- Attribution reconciles to the engine exactly (residuals ~1e-15): earning
+  weights come from `post_cap_weight` on trade dates rather than a naive
+  `shift(1)`, net mirrors the engine's `(1+gross)(1−drag)−1` NAV haircut rather
+  than `gross−drag`, and cumulative contribution is accumulated in NAV units.
+- Active sector weights are vs the PIT ff-mcap universe, **not** the Nifty 500 —
+  the TRI file carries index levels only, never constituents. Charts are labelled
+  accordingly.
+- Sector labels are a current snapshot, not point-in-time.
+
+## v0.5.3.1 — 2026-08-15
+
+Niftyindices endpoint repair and a config default correction.
+
+### Fixed
+- **Nifty 500 TRI fetch was broken** ([`utils/benchmark.py`](../utils/benchmark.py)).
+  Niftyindices moved off the ASMX-style endpoint: `Backpage.aspx/getTotalReturnIndexString`
+  → `BackPage/getTotalReturnIndexString`, and the response is now a bare JSON
+  array rather than `{"d": "<json string>"}`. Both the URL and the unwrapping
+  (`rows = json.loads(outer["d"])` → `rows = r.json()`) updated. Re-seed with
+  `python -m backtest.utils.benchmark --start 2018-01-01`.
+
+### Changed
+- **`BacktestConfig.end` default `"2026-04-30"` → `None`**, so runs extend to the
+  last trading date in the price panel instead of silently truncating at a
+  hardcoded date that ages out. Set `end` explicitly to pin a window.
+
 ## v0.5.3 — 2026-05-25
 
 Two follow-up fixes shaken out by the v0.4.2 price-history extension.

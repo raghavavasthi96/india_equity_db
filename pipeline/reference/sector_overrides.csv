@@ -1,0 +1,20 @@
+symbol,macro_sector,sector,industry,basic_industry,note
+ALBK,Financial Services,Financial Services,Banks,Public Sector Bank,Allahabad Bank; merged into Indian Bank 2020-04
+ANDHRABANK,Financial Services,Financial Services,Banks,Public Sector Bank,Andhra Bank; merged into Union Bank 2020-04
+BHARATFIN,Financial Services,Financial Services,Finance,Microfinance Institutions,Bharat Financial Inclusion; merged into IndusInd Bank 2019-07
+CORPBANK,Financial Services,Financial Services,Banks,Public Sector Bank,Corporation Bank; merged into Union Bank 2020-04
+DALMIABHA,Commodities,Construction Materials,Cement & Cement Products,Cement & Cement Products,Dalmia Bharat Ltd; renamed/restructured to DALMIABHARAT 2018-09
+DENABANK,Financial Services,Financial Services,Banks,Public Sector Bank,Dena Bank; merged into Bank of Baroda 2019-04
+EXCELCROP,Commodities,Chemicals,Fertilizers & Agrochemicals,Pesticides & Agrochemicals,Excel Crop Care; acquired by Sumitomo Chemical India 2019
+GRUH,Financial Services,Financial Services,Finance,Housing Finance Company,Gruh Finance; merged into Bandhan Bank 2019-10
+HEXAWARE,Information Technology,Information Technology,IT - Software,Computers - Software & Consulting,Hexaware Technologies; delisted 2020-11 (relisted 2025 as HEXT)
+LAKSHVILAS,Financial Services,Financial Services,Banks,Private Sector Bank,Lakshmi Vilas Bank; amalgamated into DBS Bank India 2020-11
+MAXINDIA,Healthcare,Healthcare,Healthcare Services,Hospital,"Max India Ltd; healthcare/senior-care holdco, restructured 2020"
+MONSANTO,Commodities,Chemicals,Fertilizers & Agrochemicals,Pesticides & Agrochemicals,Monsanto India; merged into Bayer CropScience 2019
+ORIENTBANK,Financial Services,Financial Services,Banks,Public Sector Bank,Oriental Bank of Commerce; merged into Punjab National Bank 2020-04
+POLARIS,Information Technology,Information Technology,IT - Software,Computers - Software & Consulting,Polaris Consulting & Services; delisted 2019 (Virtusa)
+SUPPETRO,Commodities,Chemicals,Chemicals & Petrochemicals,Petrochemicals,Supreme Petrochem; still listed but screener page carries no classification
+SYNDIBANK,Financial Services,Financial Services,Banks,Public Sector Bank,Syndicate Bank; merged into Canara Bank 2020-04
+TECHNO,Industrials,Construction,Construction,Civil Construction,Techno Electric & Engineering; renamed to TECHNOE 2018
+UNITEDBNK,Financial Services,Financial Services,Banks,Public Sector Bank,United Bank of India; merged into Punjab National Bank 2020-04
+VIJAYABANK,Financial Services,Financial Services,Banks,Public Sector Bank,Vijaya Bank; merged into Bank of Baroda 2019-04

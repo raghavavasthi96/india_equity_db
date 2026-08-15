@@ -19,7 +19,7 @@ from backtest.configs.config import BACKTEST_DATA_DIR
 
 BENCHMARK_NAME = "NIFTY 500"
 DEFAULT_PATH = os.path.join(BACKTEST_DATA_DIR, "nifty500_tri.csv")
-ENDPOINT = "https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString"
+ENDPOINT = "https://www.niftyindices.com/BackPage/getTotalReturnIndexString"
 PAGE = "https://www.niftyindices.com/reports/historical-data"
 
 # Niftyindices API only returns ~365 days per request — chunk the call.
@@ -41,8 +41,7 @@ def _fetch_chunk(session, name: str, start: date, end: date) -> pd.DataFrame:
         timeout=30,
     )
     r.raise_for_status()
-    outer = r.json()
-    rows = json.loads(outer["d"])
+    rows = r.json()
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)

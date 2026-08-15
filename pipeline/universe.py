@@ -5,9 +5,9 @@ Shares come from XBRL filings (fetch_shp_xbrl.py) and are already point-in-time;
 no corp-action adjustment is performed here.
 
 Run order:
-    python universe.py --bootstrap [--refresh-universe]   # writes flat metadata.csv
-    python fetch_shp_xbrl.py                              # writes shares_outstanding.csv
-    python universe.py [--refresh-universe]               # ranks and writes universe_history.csv
+    python -m pipeline.universe --bootstrap [--refresh-universe]   # writes flat metadata.csv
+    python -m pipeline.fetch_shp_xbrl                               # writes shares_outstanding.csv
+    python -m pipeline.universe [--refresh-universe]                # ranks and writes universe_history.csv
 """
 
 import argparse

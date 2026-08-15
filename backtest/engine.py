@@ -171,11 +171,13 @@ def run_backtest(cfg: BacktestConfig, ctx: Optional[BacktestContext] = None) -> 
             })
             # Diagnostics
             raw = raw_by_date.get(d, pd.Series(dtype=float))
+            sector_map = ctx.sector_map or {}
             for s in all_syms:
                 diag_rows.append({
                     "rebal_date": rd_match,
                     "trade_date": d,
                     "symbol": s,
+                    "sector": CASH if s == CASH else sector_map.get(s, "UNCLASSIFIED"),
                     "raw_weight": float(raw.get(s, np.nan)) if s in raw.index else np.nan,
                     "post_cap_weight": float(w_after.get(s, 0.0)),
                     "drift_weight": float(w_before.get(s, 0.0)),

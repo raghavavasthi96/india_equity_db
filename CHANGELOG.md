@@ -4,6 +4,51 @@ Per-module changelogs:
 - [`pipeline/docs/changelog.md`](pipeline/docs/changelog.md) — pipeline (v0.1–v0.4).
 - [`backtest/docs/changelog.md`](backtest/docs/changelog.md) — backtest engine (v0.5.0+).
 
+## v0.6.3 — 2026-08-15
+
+NSE/BSE unified sector classification, end to end. See per-module changelogs:
+- [`pipeline/docs/changelog.md`](pipeline/docs/changelog.md) v0.4.5
+- [`backtest/docs/changelog.md`](backtest/docs/changelog.md) v0.5.4
+
+### Pipeline
+- **`fetch_sectors.py`** (new step 5 of 7) writes
+  `data/sector_classification.csv`: the 4-level Macro-Economic Sector → Sector →
+  Industry → Basic Industry taxonomy plus NSE hierarchy codes, for **922 / 922**
+  universe symbols with zero UNKNOWN. Sourced from the already-cached screener
+  HTML (902), a tracked override table for delisted names (19), and BSE (1).
+- **`reference/`** — first git-tracked reference-data directory.
+- `validate.check_sectors` cross-checks against NSE's own published Sector.
+
+### Backtest
+- Sector caps, sector weight breakdown, sector return attribution and active
+  sector tilts all go live; `cfg.sector_level` selects the grouping level.
+- New outputs `sector_attribution.csv` and `sector_active_weights.csv`;
+  `rebalance_diagnostics.csv` gains a `sector` column.
+- Attribution reconciles to the engine's own returns and t-cost to ~1e-15.
+
+### Known limitation
+Classification is a current snapshot, not point-in-time, and sector *active*
+weights are vs the PIT ff-mcap universe rather than the Nifty 500 (the TRI
+benchmark file has no constituents).
+
+## v0.6.2.1 — 2026-08-15
+
+Maintenance patch. See per-module changelogs:
+- [`pipeline/docs/changelog.md`](pipeline/docs/changelog.md) v0.4.5.1
+- [`backtest/docs/changelog.md`](backtest/docs/changelog.md) v0.5.3.1
+
+### Backtest
+- **Nifty 500 TRI fetch repaired** — niftyindices moved to
+  `BackPage/getTotalReturnIndexString` and now returns a bare JSON array instead
+  of the ASMX `{"d": ...}` wrapper. Re-seed with
+  `python -m backtest.utils.benchmark --start 2018-01-01`.
+- `BacktestConfig.end` now defaults to `None` (last trading date) rather than a
+  hardcoded `"2026-04-30"`.
+
+### Pipeline
+- Module docstrings updated from the pre-v0.6.0 flat-script invocations to
+  `python -m pipeline.<script>`. No behaviour change.
+
 ## v0.6.2 — 2026-05-25
 
 Financials lookback buffer so YoY / multi-quarter fundamental signals

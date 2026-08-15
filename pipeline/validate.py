@@ -2,7 +2,7 @@
 validate.py — Post-run sanity checks for the India Equity Database.
 
 Run:
-    python validate.py
+    python -m pipeline.validate
 
 Writes data/validation_report.txt. Exits non-zero if any CRITICAL check fails.
 
@@ -531,6 +531,63 @@ def check_cross_panel(v: Validator):
 
 
 # ---------------------------------------------------------------------------
+# Sector classification checks
+# ---------------------------------------------------------------------------
+
+def check_sectors(v: Validator):
+    from .fetch_sectors import KNOWN_MACRO, KNOWN_SECTORS, LEVELS, UNKNOWN, OUT_FILE
+
+    sectors = load_csv_optional(path(OUT_FILE))
+    meta = load_csv_optional(path("metadata.csv"))
+
+    if sectors is None:
+        v.record("sector_classification_exists", FAIL,
+                 "File missing — run `python -m pipeline.fetch_sectors`")
+        return
+
+    missing_cols = set(LEVELS) - set(sectors.columns)
+    if missing_cols:
+        v.record("sector_classification_schema", FAIL, f"Missing columns: {missing_cols}")
+        return
+
+    if meta is not None:
+        meta_syms = set(meta["symbol"].dropna().unique())
+        absent = meta_syms - set(sectors["symbol"].dropna().unique())
+        v.check("sector_coverage_metadata", len(absent) == 0,
+                detail=f"{len(absent)}/{len(meta_syms)} metadata symbols missing a classification"
+                       + (f": {sorted(absent)[:10]}" if absent else ""))
+
+    n_unknown = int((sectors["sector"] == UNKNOWN).sum())
+    ratio = n_unknown / max(len(sectors), 1)
+    v.check("sector_unknown_ratio", ratio <= 0.05, warn_cond=ratio <= 0.10,
+            detail=f"{ratio*100:.1f}% ({n_unknown}/{len(sectors)}) UNKNOWN; threshold 5%")
+
+    for level, known in (("macro_sector", KNOWN_MACRO), ("sector", KNOWN_SECTORS)):
+        seen = set(sectors[level].dropna().unique()) - {UNKNOWN}
+        unexpected = seen - known
+        v.check(f"sector_taxonomy_{level}", len(unexpected) == 0, warn_cond=True,
+                detail=f"{len(seen)} distinct values"
+                       + (f"; outside taxonomy: {sorted(unexpected)}" if unexpected else ""))
+
+    # Cross-check against NSE's own published Sector for current constituents.
+    # Disagreements are reclassifications the upstream source hasn't picked up yet.
+    from .fetch_sectors import load_nse_sector_map
+    from .utils.http import make_session
+    try:
+        nse_map = load_nse_sector_map(make_session(warmup=False))
+    except Exception as e:
+        logger.warning(f"sector NSE cross-check skipped: {e}")
+        nse_map = {}
+    if nse_map:
+        ours = dict(zip(sectors["symbol"], sectors["sector"]))
+        overlap = [s for s in ours if s in nse_map and ours[s] != UNKNOWN]
+        disagree = [s for s in overlap if ours[s] != nse_map[s]]
+        v.check("sector_agrees_with_nse", len(disagree) == 0, warn_cond=True,
+                detail=f"{len(overlap) - len(disagree)}/{len(overlap)} agree"
+                       + (f"; differ: {[(s, ours[s], nse_map[s]) for s in disagree[:5]]}" if disagree else ""))
+
+
+# ---------------------------------------------------------------------------
 # Failed-log checks
 # ---------------------------------------------------------------------------
 
@@ -564,6 +621,7 @@ def main():
     check_survivorship_bias(v)
     check_prices(v)
     check_financials(v)
+    check_sectors(v)
     check_cross_panel(v)
     check_failed_logs(v)
 
