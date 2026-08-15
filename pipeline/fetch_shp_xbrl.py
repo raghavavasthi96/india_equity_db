@@ -5,7 +5,7 @@ Writes data/shares_outstanding.csv with columns:
   symbol, date, total_shares, promoter_shares, free_float_shares, source
 
 Run:
-    python fetch_shp_xbrl.py [--symbols A,B,C] [--force] [--start-date YYYY-MM-DD]
+    python -m pipeline.fetch_shp_xbrl [--symbols A,B,C] [--force] [--start-date YYYY-MM-DD]
 """
 
 import argparse

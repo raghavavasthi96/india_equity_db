@@ -11,7 +11,7 @@ Outputs:
   data/data_gaps.csv — appended for symbols where fallback fails (script=fetch_prices)
 
 Run:
-    python fetch_prices.py [--symbols A,B,C] [--start YYYY-MM-DD] [--no-fallback]
+    python -m pipeline.fetch_prices [--symbols A,B,C] [--start-date YYYY-MM-DD] [--no-fallback]
 """
 
 import argparse

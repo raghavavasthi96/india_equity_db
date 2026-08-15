@@ -1,5 +1,5 @@
 """
-run_all.py — Run the india_equity_db pipeline. Stops on first failure.
+run_pipeline.py — Run the india_equity_db pipeline. Stops on first failure.
 
 Modes (mirrors docs/README.md):
     smoke      Smoke test on 3 symbols (RELIANCE,TCS,ZYDUSWELL). All 6 steps.
@@ -11,12 +11,12 @@ Modes (mirrors docs/README.md):
                from scratch).
 
 Usage:
-    python run_all.py --mode smoke
-    python run_all.py --mode full
-    python run_all.py --mode daily
-    python run_all.py --mode quarterly
-    python run_all.py --mode force
-    python run_all.py --mode full --symbols RELIANCE,TCS    # override subset
+    python -m pipeline.run_pipeline --mode smoke
+    python -m pipeline.run_pipeline --mode full
+    python -m pipeline.run_pipeline --mode daily
+    python -m pipeline.run_pipeline --mode quarterly
+    python -m pipeline.run_pipeline --mode force
+    python -m pipeline.run_pipeline --mode full --symbols RELIANCE,TCS    # override subset
 
 Parallel workers for fetch_shp_xbrl.py and fetch_financials.py are set in
 config.py via XBRL_WORKERS and FINANCIALS_WORKERS. To override ad-hoc, run

@@ -2,7 +2,7 @@
 validate.py — Post-run sanity checks for the India Equity Database.
 
 Run:
-    python validate.py
+    python -m pipeline.validate
 
 Writes data/validation_report.txt. Exits non-zero if any CRITICAL check fails.
 

@@ -56,7 +56,7 @@ class BacktestConfig:
     start: Optional[str] = "2018-06-30"
     # ISO date string. Backtest start. None = use first trading date in panel.
 
-    end: Optional[str] = "2026-04-30"
+    end: Optional[str] = None
     # ISO date string. Backtest end. None = use last trading date.
 
     # ----- Rebalance schedule -----------------------------------------------
