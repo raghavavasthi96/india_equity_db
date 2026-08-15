@@ -2,13 +2,16 @@
 run_pipeline.py — Run the india_equity_db pipeline. Stops on first failure.
 
 Modes (mirrors docs/README.md):
-    smoke      Smoke test on 3 symbols (RELIANCE,TCS,ZYDUSWELL). All 6 steps.
-    full       Full 500-symbol run. All 6 steps.
+    smoke      Smoke test on 3 symbols (RELIANCE,TCS,ZYDUSWELL). All 7 steps.
+    full       Full 500-symbol run. All 7 steps.
     daily      Daily incremental: fetch_shp_xbrl + fetch_prices + validate.
     quarterly  Quarterly refresh. Alias for `full` (same script ordering).
-    force      Full run with --force on fetch_financials and fetch_shp_xbrl
-               (re-download all screener HTML and XBRL files; rebuild universe
-               from scratch).
+    force      Full run with --force on fetch_financials, fetch_shp_xbrl and
+               fetch_sectors (re-download all screener HTML, XBRL files and the
+               BSE scrip master; rebuild universe from scratch).
+
+Sector classification (step 5) is excluded from `daily` — industry
+classifications change on the order of once a year, not once a day.
 
 Usage:
     python -m pipeline.run_pipeline --mode smoke
@@ -96,24 +99,31 @@ def main():
         run("2/3 fetch_prices",   [py, "-m", "pipeline.fetch_prices"] + sym_args)
         run("3/3 validate",       [py, "-m", "pipeline.validate"])
     else:
-        # smoke | full | quarterly | force — same 6-step ordering
-        run("1/6 universe bootstrap",
+        # smoke | full | quarterly | force — same 7-step ordering
+        run("1/7 universe bootstrap",
             [py, "-m", "pipeline.universe", "--bootstrap", "--refresh-universe"] + sym_args)
 
         xbrl_args = [py, "-m", "pipeline.fetch_shp_xbrl"] + sym_args
         if args.mode == "force":
             xbrl_args.append("--force")
-        run("2/6 fetch_shp_xbrl", xbrl_args)
+        run("2/7 fetch_shp_xbrl", xbrl_args)
 
-        run("3/6 universe ranking", [py, "-m", "pipeline.universe"] + sym_args)
+        run("3/7 universe ranking", [py, "-m", "pipeline.universe"] + sym_args)
 
         fin_args = [py, "-m", "pipeline.fetch_financials"] + sym_args
         if args.mode == "force":
             fin_args.append("--force")
-        run("4/6 fetch_financials", fin_args)
+        run("4/7 fetch_financials", fin_args)
 
-        run("5/6 fetch_prices",     [py, "-m", "pipeline.fetch_prices"] + sym_args)
-        run("6/6 validate",         [py, "-m", "pipeline.validate"])
+        # Reads the screener cache fetch_financials just refreshed, so it must
+        # follow step 4.
+        sec_args = [py, "-m", "pipeline.fetch_sectors"] + sym_args
+        if args.mode == "force":
+            sec_args.append("--force")
+        run("5/7 fetch_sectors", sec_args)
+
+        run("6/7 fetch_prices",     [py, "-m", "pipeline.fetch_prices"] + sym_args)
+        run("7/7 validate",         [py, "-m", "pipeline.validate"])
 
     total = time.time() - t_start
     print(f"\nPipeline complete in {total:.1f}s (mode={args.mode}).", flush=True)

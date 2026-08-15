@@ -4,6 +4,53 @@ Backtest module changelog (v0.5.0+) lives in [../../backtest/docs/changelog.md](
 The v0.6.0 refactor that split pipeline and backtest into separate modules is
 recorded in the root [../../CHANGELOG.md](../../CHANGELOG.md).
 
+## v0.4.5 — 2026-08-15
+
+NSE/BSE unified industry classification for the whole universe.
+
+### Why
+`metadata.csv` carried `sector` / `industry` columns hardcoded to `pd.NA` since
+day one, which left the backtest's sector cap, sector breakdown and any sector
+attribution permanently inert. Both exchanges publish the same SEBI-mandated
+4-level taxonomy; the problem was only sourcing it for all 922 universe symbols,
+including delisted ones no live API classifies any more.
+
+### Added
+- **`fetch_sectors.py`** — resolves `macro_sector` / `sector` / `industry` /
+  `basic_industry` plus the official NSE hierarchy codes, writing
+  `data/sector_classification.csv`. Precedence: hand-curated overrides →
+  cached screener HTML → BSE `ComHeader` → NSE index constituent file.
+  Coverage **922 / 922, zero UNKNOWN** (902 screener / 19 override / 1 BSE).
+- **`reference/sector_overrides.csv`** — new *tracked* reference directory
+  (`data/` is gitignored). 19 delisted/merged names: PSU bank mergers, Gruh,
+  Monsanto India, Hexaware, Polaris, etc.
+- **`config.BSE_MASTER_CACHE_FILE` / `BSE_MASTER_CACHE_DAYS`** — the BSE equity
+  scrip master (Active + Delisted + Suspended, ~10.8k rows) cached 7 days and
+  used to map ISIN / ticker → BSE scrip code.
+- **`validate.check_sectors`** — coverage vs metadata, UNKNOWN ratio, taxonomy
+  drift, and agreement with NSE's own published Sector (currently 673/674; the
+  lone `SKFINDIA` mismatch is a reclassification screener hasn't picked up).
+- `run_pipeline.py` gains a 7th step, after `fetch_financials` (which owns
+  screener cache freshness) and excluded from `daily`.
+
+### Notes
+- Screener's peer-comparison breadcrumb mirrors the NSE taxonomy verbatim,
+  codes included — verified against `ind_niftytotalmarket_list.csv`. It is read
+  from the existing cache, so 902 of 922 symbols cost zero network calls.
+- The classification is a **current snapshot, not point-in-time**. No free
+  historical source exists; `as_of` records when it was taken.
+- `metadata.csv`'s `sector` / `industry` columns are now documented as
+  deprecated. They are left in place rather than removed — nothing reads them,
+  and dropping them would churn the master schema every fetcher loads.
+
+## v0.4.4.1 — 2026-08-15
+
+Docstring-only pass: module headers still showed the pre-v0.6.0 flat-script
+invocations (`python universe.py`, `python fetch_shp_xbrl.py`, `run_all.py`),
+which have not worked since the package split. Updated to `python -m pipeline.<script>`
+across `universe.py`, `fetch_shp_xbrl.py`, `fetch_prices.py`, `fetch_financials.py`,
+`validate.py` and `run_pipeline.py`. No behaviour change.
+
 ## v0.4.4 — 2026-05-25
 
 Bhavcopy fallback inverted from symbol-major to date-major scan.

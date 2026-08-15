@@ -139,6 +139,12 @@ def apply_caps(
             sector_groups = pd.Series(
                 {s: sector_map.get(s, "UNKNOWN") for s in w.index}
             )
+            n_sectors = sector_groups.nunique()
+            if cfg.max_sector_wt * n_sectors < 1.0:
+                raise ValueError(
+                    f"Infeasible: max_sector_wt={cfg.max_sector_wt} x "
+                    f"{n_sectors} sectors = {cfg.max_sector_wt*n_sectors:.3f} < 1.0"
+                )
 
     size_groups = None
     if cfg.max_size_bucket_wt:

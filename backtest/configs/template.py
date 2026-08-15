@@ -40,8 +40,9 @@ cfg = BacktestConfig(
 
     # ----- Caps -----
     # max_stock_wt=0.20,
-    # max_sector_wt=None,             # needs sector_map_csv
-    # sector_map_csv=None,
+    # max_sector_wt=0.25,             # per-sector cap at `sector_level`
+    # sector_level="sector",          # macro_sector | sector | industry | basic_industry
+    # sector_map_csv=None,            # None = pipeline/data/sector_classification.csv
     # max_size_bucket_wt=None,        # e.g. {"small": 0.20}
     # size_buckets={"large": (1, 100), "mid": (101, 250), "small": (251, None)},
 

@@ -7,6 +7,7 @@ import os
 import webbrowser
 from datetime import datetime
 
+from .attribution import build_sector_frames
 from .configs.config import BacktestConfig, PIPELINE_DATA_DIR, BACKTEST_DATA_DIR
 from .engine import run_backtest
 
@@ -25,7 +26,7 @@ def _make_run_id(cfg: BacktestConfig) -> str:
 def _input_fingerprints() -> dict:
     out = {}
     for f in ["prices_panel.csv", "universe_history.csv", "shares_outstanding.csv",
-              "financials_panel.csv", "metadata.csv"]:
+              "financials_panel.csv", "metadata.csv", "sector_classification.csv"]:
         p = os.path.join(PIPELINE_DATA_DIR, f)
         if os.path.exists(p):
             out[f] = {"mtime": datetime.utcfromtimestamp(os.path.getmtime(p)).isoformat(),
@@ -51,6 +52,14 @@ def write_outputs(result, out_dir: str) -> None:
         result.turnover.to_csv(os.path.join(out_dir, "turnover.csv"), index=False)
     if not result.tcost.empty:
         result.tcost.to_csv(os.path.join(out_dir, "tcost.csv"), index=False)
+
+    # Must run before summary.json is written — it folds the sector stats in.
+    attribution, active = build_sector_frames(result)
+    if not attribution.empty:
+        attribution.to_csv(os.path.join(out_dir, "sector_attribution.csv"), index=False)
+    if not active.empty:
+        active.to_csv(os.path.join(out_dir, "sector_active_weights.csv"), index=False)
+
     with open(os.path.join(out_dir, "summary.json"), "w") as f:
         json.dump(result.summary, f, indent=2, default=str)
 

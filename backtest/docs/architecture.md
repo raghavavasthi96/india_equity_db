@@ -22,8 +22,8 @@ to `pipeline/data/`). Backtest-owned data lives under `backtest/data/`.
 | `pipeline/data/prices_panel.csv` | Long-format OHLCV. Already total-return adjusted (yfinance `auto_adjust=True` + bhavcopy fallback) |
 | `pipeline/data/shares_outstanding.csv` | Total / promoter / public / free-float share counts (PIT quarterly) |
 | `pipeline/data/financials_panel.csv` | Quarterly fundamentals for signals |
-| `pipeline/data/metadata.csv` | Sector field currently empty — sector caps deferred |
-| `backtest/data/sector_map.csv` *(optional, future)* | `symbol,sector` mapping when populated |
+| `pipeline/data/metadata.csv` | Company names / ISIN / universe dates |
+| `pipeline/data/sector_classification.csv` | NSE/BSE unified 4-level industry classification (`python -m pipeline.fetch_sectors`). Default source for sector caps, breakdown and attribution |
 | `backtest/data/nifty500_tri.csv` | Nifty 500 Total Returns Index, fetched via `python -m backtest.utils.benchmark` |
 
 Prices are total-return adjusted upstream, so daily `close.pct_change()` gives total returns. No further CA handling.
@@ -42,6 +42,7 @@ Top-level `india_equity_db/backtest/`:
 | `tcost.py` | Per-name liquidity-driven cost model |
 | `engine.py` | Rebalance loop, daily drift, return accrual |
 | `metrics.py` | Performance stats |
+| `attribution.py` | Sector weight / return-contribution / active-tilt frames |
 | `dashboard.py` | Self-contained Plotly HTML report |
 | `run_backtest.py` | Loads a preset Python file, runs the engine, writes outputs under `backtest/data/backtests/<run_id>/` |
 | `configs/*.py` | Preset config files (`cfg = BacktestConfig(...)`). Includes `template.py`, `default_ffmcap_q.py`, `momentum_q.py`, `mom_lvol_q.py`. |
@@ -94,18 +95,23 @@ Trading convention: snapshot at `rebal_date`, trade at `rebal_date + rebal_offse
 
 | Field | Default | Purpose |
 |---|---|---|
-| `start`, `end` | full range | Backtest window |
-| `rebal_freq` | `"Q"` | `M` / `Q` / `A` / list of custom dates |
+| `start` | `"2018-06-30"` | Backtest start; `None` = first trading date in the panel |
+| `end` | `None` | Backtest end; `None` = last trading date in the panel |
+| `rebal_freq` | `"Q"` | `M` / `Q` / `A` / `custom` |
+| `custom_rebal_dates` | `None` | Explicit date list; only used when `rebal_freq == "custom"` |
 | `rebal_offset` | `1` | Trade T+offset after snapshot |
 | `weighting` | `"ffmcap"` | `equal` / `ffmcap` / `score_weighted` / `ffmcap_tilt` |
 | `tilt_gamma` | `0.5` | γ for `ffmcap_tilt` |
 | `score_threshold` | `0.0` | Floor for `score_weighted` |
 | `signal_fn` | `None` | Callable `(pool, date, ctx) → Series` |
+| `signal_name` | `None` | Label used in `run_id`, dashboard header and outputs |
 | `signal_top_n` / `signal_top_quantile` | `None` | Post-signal universe filter (see §7) |
 | `winsor_sigma` | `3.0` | Signal winsorisation |
+| `reporting_lag_days` | `60` | Calendar-day lag on `financials_panel` dates before fundamental signals may read them |
 | `max_stock_wt` | `0.20` | Per-name cap |
-| `max_sector_wt` | `None` | Stub — needs sector map |
-| `sector_map_csv` | `None` | Path to `symbol,sector` CSV; required for sector caps |
+| `max_sector_wt` | `None` | Per-sector cap at `sector_level` |
+| `sector_level` | `"sector"` | `macro_sector` / `sector` / `industry` / `basic_industry` |
+| `sector_map_csv` | `None` | Override path; `None` = pipeline `sector_classification.csv` |
 | `max_size_bucket_wt` | `None` | Dict `{bucket_name: cap}`, e.g. `{"small": 0.20}` |
 | `size_buckets` | `{"large": (1, 100), "mid": (101, 250), "small": (251, None)}` | PIT-rank-based bucket boundaries |
 | `min_price` | `1.0` | INR floor |
@@ -114,10 +120,14 @@ Trading convention: snapshot at `rebal_date`, trade at `rebal_date + rebal_offse
 | `max_universe_rank` | `None` | e.g. top 200 of 500 |
 | `min_free_float_pct` | `None` | Tight-float filter |
 | `exclude_symbols` | `[]` | Hard blacklist |
+| `extra_filters` | `[]` | User callables `(pool, date, ctx) → pool`, appended to the pre-signal stack |
 | `tcost` | `TcostConfig(...)` | See §8 |
 | `cash_buffer` | `0.0` | Post-cap residual; weights normalised to `1 - cash_buffer`, remainder held in `CASH` |
 | `benchmark` | `"ffmcap_top500"` | Internal benchmark name |
 | `rolling_window_days` | `252` | Window for rolling stats in dashboard (return, vol, Sharpe, IR) |
+| `benchmark_csv` | `None` | TRI CSV override; `None` = `backtest/data/nifty500_tri.csv` |
+| `run_id` | `None` | Output subdirectory name; auto-generated from timestamp + weighting + signal + freq |
+| `out_dir` | `None` | Full output-directory override; `None` = `backtest/data/backtests/<run_id>/` |
 
 ## 7. Universe filters
 
@@ -200,7 +210,9 @@ Inner routine (per cap type): clip names above cap → redistribute excess pro-r
 
 Outer loop: run inner routine on stock → sector → size sequentially. After all three pass, recheck all three. Repeat the full (stock, sector, size) sequence until no cap fires in a full pass, max 20 outer iterations. Raise on non-convergence. Infeasible configs (e.g. `max_stock_wt * N < 1`) raise immediately.
 
-Sector cap is a stub: reads `cfg.sector_map_csv` if set; if absent, logs a warning and no-ops.
+Sector cap groups by `cfg.sector_level` via `ctx.sector_map`. Infeasible configs
+(`max_sector_wt x n_sectors < 1`) raise immediately, mirroring the stock-cap guard.
+If no classification file exists at all the cap logs a warning and no-ops.
 
 Size buckets defined by `cfg.size_buckets` (rank ranges, inclusive bounds). PIT mcap rank from `universe_history.rank` at the snapshot date.
 
@@ -220,18 +232,63 @@ Per run, written to `backtest/data/backtests/<run_id>/`:
 |---|---|
 | `config.json` | Frozen config + input file mtimes/hashes |
 | `weights.csv` | Daily weights panel (incl. `CASH`), wide format (date × symbol) |
-| `rebalance_diagnostics.csv` | Per rebal_date × symbol: `{raw_weight, post_cap_weight, drift_weight, delta_weight, cost_bps}` |
+| `rebalance_diagnostics.csv` | Per rebal_date × symbol: `{sector, raw_weight, post_cap_weight, drift_weight, delta_weight, cost_bps}` |
 | `returns.csv` | Gross, net, benchmark, active (daily) |
-| `turnover.csv` | Per-rebalance one-way turnover |
-| `tcost.csv` | Per-rebalance t-cost drag (bps + INR). Aggregate of the per-name `cost_bps × |Δw|` rows in `rebalance_diagnostics.parquet` — kept separate for quick PM consumption. |
+| `turnover.csv` | `rebal_date, trade_date, one_way_turnover` (Σ\|Δw\|/2 per rebalance) |
+| `tcost.csv` | `rebal_date, trade_date, drag_decimal, drag_bps, nav_inr_notional`. Aggregate of the per-name `cost_bps × |Δw|` rows in `rebalance_diagnostics.csv` — kept separate for quick PM consumption. |
+| `sector_attribution.csv` | Daily `date, sector, weight, contrib_gross, contrib_tcost, contrib_net, cum_contrib_net_pct` |
+| `sector_active_weights.csv` | Daily `date, sector, portfolio_wt, benchmark_wt, active_wt` |
 | `summary.json` | All headline stats (§14) |
 | `dashboard.html` | Self-contained Plotly report (§15) |
 
 Drawdown series and calendar-year returns are derived from `returns.csv` on-the-fly inside the dashboard rather than persisted separately.
 
+### Sector attribution (`attribution.py`)
+
+Built from finished engine output — nothing re-runs the backtest, so attribution
+is recomputable from persisted CSVs. Grouping is by `cfg.sector_level`.
+
+**Earning weights.** The engine appends *post-drift* weights to the daily panel,
+so on an ordinary day the weights that earned day `t`'s return are row `t-1`. On
+a trade date the engine rebalances to target *before* accruing that day's return,
+so the earning weights are the post-cap target — read back from
+`rebalance_diagnostics.post_cap_weight`. Naively using `shift(1)` everywhere
+breaks the reconciliation on exactly the rebalance days.
+
+**Gross.** `contrib_gross[s,t] = Σ_{i∈s} w_earning[i,t] · r[i,t]` — the same
+arithmetic the engine uses, so sector contributions sum to `returns.gross` with
+no linking residual.
+
+**T-cost.** Allocated from the per-name costs the engine already recorded
+(`|delta_weight| · cost_bps / 1e4`), so net attribution is exact, not modelled.
+
+**Net.** The engine applies cost as a NAV haircut, `net = (1+gross)(1−drag)−1`,
+not `gross − drag`. Attribution mirrors that shrink:
+`contrib_net[s] = contrib_gross[s]·(1−drag_t) − tcost[s]`. Summing gives
+`gross(1−drag) − drag = net` exactly; skipping it leaves the `gross × drag`
+cross-term as a visible residual.
+
+**Cumulative.** Accumulated in NAV units (`nav[t−1] · contrib[t]`, cumulated) and
+reported as % of starting NAV. Summing daily percentage contributions would not
+reconcile to the compounded total; this does, with no Cariño-style linking
+coefficient.
+
+`verify_identities()` reconciles all of the above against the engine's own
+numbers and its output is persisted to `summary.json` as
+`sector_attribution_residuals` (all ~1e-15 on the default preset).
+
+**Active weights.** Portfolio sector weights minus the sector weights of the PIT
+free-float-mcap universe snapshot (`context.benchmark_weights_asof`, the same
+vector the stock-level active-weight chart already used). This is **not** the
+Nifty 500: `nifty500_tri.csv` holds index levels only, never constituents, so
+true index sector weights are unavailable. Everything derived from it is labelled
+"vs ff-mcap top-500".
+
 ## 14. `summary.json` contents
 
 CAGR (gross / net / bench), annualised vol (gross / net / bench), Sharpe (gross / net / bench), Sortino (net), hit rate, avg N positions, `turnover_per_rebal` (mean one-way Δw/2 across rebalances), `turnover_annualized` (sum of one-way turnover divided by years elapsed), **tcost_bps_per_rebal**, **tcost_bps_annualized**, tracking error, **information ratio**, **calendar_year_returns** (dict by year: gross / net / bench / active).
+
+Sector blocks (present whenever a classification file is available): `sector_level`, `sector_contribution_net` (cumulative % of starting NAV by sector), `sector_active_wt_end` (final tilts vs ff-mcap top-500), `sector_attribution_residuals` (reconciliation deviations vs the engine — see §13).
 
 Drawdown stats computed for all three series (gross portfolio, net portfolio, benchmark) and persisted in `summary.json` as `{series}_max_drawdown`, `{series}_max_drawdown_start`, `{series}_max_drawdown_end`, `{series}_max_drawdown_recovery_days`. The dashboard stats table surfaces only the *net* drawdown block (gross and benchmark DD are visible in the overlay chart but redundant in the table).
 
@@ -244,6 +301,7 @@ Drawdown stats computed for all three series (gross portfolio, net portfolio, be
 - **Stats table** — every field in `summary.json`.
 - **Risk & turnover** — rolling return / vol / Sharpe / IR (4-panel, window = `cfg.rolling_window_days`, default 252); turnover bars per rebal; t-cost bars per rebal (bps); position count over time.
 - **Composition** — top 20 current holdings; top 10 over/under active weights vs benchmark; cumulative weight concentration curve with HHI in subtitle.
+- **Sector & size breakdown** — size-bucket weight area chart; sector weight area chart (at `cfg.sector_level`); cumulative net contribution by sector (% of starting NAV); active sector weight vs ff-mcap top-500. The last three render only when a classification file is available; otherwise the section prints a "run `python -m pipeline.fetch_sectors`" note.
 - **Provenance footer** — input mtimes, code version, generated timestamp.
 
 Invocation: presets are Python files under `backtest/configs/`, each defining `cfg = BacktestConfig(...)` and an optional `auto_open = True`. CLI takes a single positional path:
@@ -265,6 +323,10 @@ Before declaring the engine live:
 
 ## 17. Open / deferred
 
-- Sector caps stubbed; activate when `backtest/data/sector_map.csv` populated.
+- Sector attribution is grouped by a *current* classification snapshot, not a
+  point-in-time one — no free historical Indian sector data exists.
+- Sector active weights are vs the PIT ff-mcap universe, not the Nifty 500. The
+  TRI benchmark file carries index levels only, never constituents, so true index
+  sector weights are unavailable.
 - Borrow/short modelling not in scope (long-only).
 - `CASH` earns 0; configurable cash-rate field can be added on request.

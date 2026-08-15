@@ -72,12 +72,32 @@ Outputs are written to `backtest/data/backtests/<run_id>/`:
 | `returns.csv` | Daily gross/net/benchmark returns. |
 | `turnover.csv` | Per-rebalance one-way turnover (sum of \|Δw\|/2). |
 | `tcost.csv` | Per-rebalance gross-NAV t-cost drag in bps. |
-| `summary.json` | Headline stats (CAGR, vol, Sharpe, max DD, IR, TE, etc.). |
+| `sector_attribution.csv` | Daily `date, sector, weight, contrib_gross, contrib_tcost, contrib_net, cum_contrib_net_pct`. Reconciles exactly to `returns.csv` and `tcost.csv`. |
+| `sector_active_weights.csv` | Daily `date, sector, portfolio_wt, benchmark_wt, active_wt` vs the PIT ff-mcap universe (**not** the Nifty 500 — the TRI file has no constituents). |
+| `summary.json` | Headline stats (CAGR, vol, Sharpe, max DD, IR, TE, etc.) plus `sector_contribution_net`, `sector_active_wt_end` and `sector_attribution_residuals`. |
 | `dashboard.html` | Self-contained Plotly report (dark theme). Open in any browser. |
 
 Engine intermediates cached under `backtest/data/cache/`:
 - `close_wide.parquet`, `volume_wide.parquet`, `adv_30d_inr.parquet` —
   wide pivots of `pipeline/data/prices_panel.csv`. Auto-rebuilt on source
   mtime change.
+
+## Sector grouping
+
+Sector caps, the dashboard sector breakdown and sector attribution all read
+`pipeline/data/sector_classification.csv`, produced by
+`python -m pipeline.fetch_sectors`. Nothing needs configuring — presets pick it
+up automatically. Two knobs:
+
+```python
+cfg = BacktestConfig(
+    sector_level="sector",   # macro_sector (12) | sector (22) | industry (~55) | basic_industry (~152)
+    max_sector_wt=0.25,      # per-sector cap; raises if max_sector_wt x n_sectors < 1
+)
+```
+
+If the classification file is missing, the sector cap logs a warning and no-ops,
+the sector outputs are skipped, and the dashboard prints a note — everything else
+runs unchanged.
 
 See [architecture.md](architecture.md) for the full design and config reference.

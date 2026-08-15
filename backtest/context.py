@@ -88,11 +88,61 @@ def load_financials() -> pd.DataFrame:
     return pd.read_csv(src, parse_dates=["date"])
 
 
-def load_sector_map(path: Optional[str]) -> Optional[dict]:
-    if not path or not os.path.exists(path):
+SECTOR_CLASSIFICATION_PATH = os.path.join(PIPELINE_DATA_DIR, "sector_classification.csv")
+
+SECTOR_LEVELS = ["macro_sector", "sector", "industry", "basic_industry"]
+
+
+def load_sector_map(path: Optional[str], level: str = "sector") -> Optional[dict]:
+    """
+    symbol -> classification at `level`, from the pipeline's
+    `sector_classification.csv` (or any CSV with a `symbol` column and that level).
+
+    Returns None only when the file genuinely does not exist, so the sector cap
+    and dashboard breakdown keep their existing "not configured" degradation.
+    """
+    if level not in SECTOR_LEVELS:
+        raise ValueError(f"sector_level must be one of {SECTOR_LEVELS}, got {level!r}")
+
+    src = path or SECTOR_CLASSIFICATION_PATH
+    if not os.path.exists(src):
+        if path:
+            raise FileNotFoundError(f"sector_map_csv not found: {src}")
         return None
-    df = pd.read_csv(path)
-    return dict(zip(df["symbol"], df["sector"]))
+
+    df = pd.read_csv(src)
+    if "symbol" not in df.columns:
+        raise ValueError(f"{src}: missing required `symbol` column")
+    if level in df.columns:
+        col = level
+    elif "sector" in df.columns:
+        # Legacy two-column `symbol,sector` map — only one level available.
+        col = "sector"
+    else:
+        raise ValueError(
+            f"{src}: has neither a {level!r} nor a 'sector' column. "
+            f"Regenerate it with `python -m pipeline.fetch_sectors`."
+        )
+    return dict(zip(df["symbol"], df[col]))
+
+
+def benchmark_weights_asof(ctx: "BacktestContext", date: pd.Timestamp) -> pd.Series:
+    """
+    Free-float-mcap weights of the PIT universe snapshot at `date` — the
+    `ffmcap_top500` weight benchmark used for active-weight reporting.
+
+    Note this is NOT the return benchmark (`nifty500_tri`): the TRI file carries
+    index levels only, never constituents, so true index weights are unavailable.
+    Anything derived from this must be labelled as vs ff-mcap top-500.
+    """
+    snap = ctx.snap_asof(date)
+    if snap.empty:
+        return pd.Series(dtype=float)
+    w = snap["free_float_market_cap_inr"].astype(float)
+    w = w[w > 0]
+    if w.empty:
+        return pd.Series(dtype=float)
+    return w / w.sum()
 
 
 @dataclass
@@ -133,7 +183,7 @@ def build_context(cfg: BacktestConfig) -> BacktestContext:
     uh = load_universe_history()
     shares = load_shares()
     metadata = load_metadata()
-    sector_map = load_sector_map(cfg.sector_map_csv)
+    sector_map = load_sector_map(cfg.sector_map_csv, cfg.sector_level)
 
     # Last valid close date per symbol BEFORE ffill (delisting marker)
     last_valid = close_raw.apply(lambda s: s.last_valid_index())

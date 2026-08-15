@@ -305,6 +305,48 @@ def _sector_breakdown(weights_df, ctx):
     return _build_bucket_breakdown(weights_df, ctx, classify, [])
 
 
+def _sector_contribution_fig(attribution):
+    """Cumulative net return contribution by sector, in % of starting NAV."""
+    import plotly.graph_objects as go
+    if attribution is None or attribution.empty:
+        return None
+    end = attribution["date"].max()
+    vals = (attribution[attribution["date"] == end]
+            .set_index("sector")["cum_contrib_net_pct"])
+    vals = vals[vals.abs() > 1e-9].sort_values()
+    if vals.empty:
+        return None
+    colors = [ACCENT_GREEN if v >= 0 else ACCENT_RED for v in vals.values]
+    fig = go.Figure(go.Bar(x=vals.values, y=vals.index, orientation="h",
+                           marker_color=colors))
+    _apply_layout(fig, title="Cumulative net contribution by sector (% of starting NAV)",
+                  height=max(320, 22 * len(vals) + 140))
+    fig.update_layout(xaxis_ticksuffix="%")
+    return fig
+
+
+def _sector_tilt_fig(active):
+    """End-of-run active sector weight vs the ff-mcap top-500 weight benchmark."""
+    import plotly.graph_objects as go
+    if active is None or active.empty:
+        return None
+    end = active["date"].max()
+    vals = active[active["date"] == end].set_index("sector")["active_wt"]
+    vals = vals[vals.abs() > 1e-9].sort_values()
+    if vals.empty:
+        return None
+    colors = [ACCENT_GREEN if v >= 0 else ACCENT_RED for v in vals.values]
+    fig = go.Figure(go.Bar(x=vals.values, y=vals.index, orientation="h",
+                           marker_color=colors))
+    # The return benchmark is the Nifty 500 TRI, but the *weight* benchmark can
+    # only be the PIT ff-mcap universe (the TRI file has no constituents), so the
+    # title has to name which one this is.
+    _apply_layout(fig, title="Active sector weight vs ff-mcap top-500 (latest)",
+                  height=max(320, 22 * len(vals) + 140))
+    fig.update_layout(xaxis_tickformat=".2%")
+    return fig
+
+
 def _area_fig(df, title, palette=None):
     import plotly.graph_objects as go
     if df is None or df.empty:
@@ -462,7 +504,13 @@ def render_dashboard(result, out_path: str) -> str:
     size_df = _size_breakdown(result.weights, ctx)
     sector_df = _sector_breakdown(result.weights, ctx)
     size_fig = _area_fig(size_df, "Size-bucket weight over time")
-    sector_fig = _area_fig(sector_df, "Sector weight over time") if sector_df is not None else None
+    sector_fig = (_area_fig(sector_df, f"{cfg.sector_level} weight over time")
+                  if sector_df is not None else None)
+
+    from .attribution import build_sector_frames
+    attribution, active = build_sector_frames(result)
+    sector_contrib_fig = _sector_contribution_fig(attribution)
+    sector_tilt_fig = _sector_tilt_fig(active)
 
     def _h(fig, div_id):
         if fig is None:
@@ -486,11 +534,14 @@ def render_dashboard(result, out_path: str) -> str:
 
     breakdown_html = _h(size_fig, "fig_size")
     if sector_fig is not None:
-        breakdown_html += _h(sector_fig, "fig_sector")
+        breakdown_html += (_h(sector_fig, "fig_sector")
+                           + _h(sector_contrib_fig, "fig_sector_contrib")
+                           + _h(sector_tilt_fig, "fig_sector_tilt"))
     else:
         breakdown_html += (
-            "<div class='note'>Sector breakdown unavailable — "
-            "<code>sector_map_csv</code> not configured.</div>"
+            "<div class='note'>Sector breakdown unavailable — no sector map found. "
+            "Run <code>python -m pipeline.fetch_sectors</code>, or point "
+            "<code>sector_map_csv</code> at a classification CSV.</div>"
         )
 
     plotly_cdn = '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'

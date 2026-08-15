@@ -31,8 +31,9 @@ india_equity_db/
 │   ├── fetch_shp_xbrl.py      # fetch NSE SHP XBRL filings → shares_outstanding.csv
 │   ├── fetch_prices.py        # yfinance OHLCV + bhavcopy fallback for delisted symbols
 │   ├── fetch_financials.py    # screener.in quarterly + annual (HTML scrape, thread-pooled)
+│   ├── fetch_sectors.py       # NSE/BSE unified 4-level industry classification
 │   ├── validate.py            # post-run sanity checks (Validator class, full-panel)
-│   ├── run_pipeline.py        # orchestrate full pipeline (6-step or daily mode)
+│   ├── run_pipeline.py        # orchestrate full pipeline (7-step or daily mode)
 │   ├── configs/
 │   │   ├── __init__.py
 │   │   └── config.py          # paths, constants, sleep ranges, cache TTLs
@@ -62,9 +63,13 @@ india_equity_db/
 │   │   ├── prices_panel.csv       # long format: date, symbol, parameter, value
 │   │   ├── financials_panel.csv   # long format: date, symbol, parameter, value (quarterly)
 │   │   ├── financials_annual_panel.csv  # long format (annual, dates = 31-Mar-YYYY)
+│   │   ├── sector_classification.csv  # NSE/BSE unified 4-level industry classification
+│   │   ├── bse_scrip_master.json  # BSE equity scrip master (ISIN/ticker -> scrip code, 7-day TTL)
 │   │   ├── validation_report.txt
 │   │   ├── validation_outliers.csv
 │   │   └── screener_cache/        # cached HTML per ticker ({SYMBOL}.html)
+│   ├── reference/                 # tracked in git (unlike data/)
+│   │   └── sector_overrides.csv   # hand-curated classifications for delisted names
 │   ├── logs/
 │   │   └── run_YYYYMMDD_HHMMSS.log  # single file per `python -m pipeline.<script>` invocation
 │   └── docs/
@@ -287,6 +292,19 @@ Both panels use the same long format: `date, symbol, parameter, value`.
 ### `metadata.csv`
 | symbol | isin | company_name | sector | industry | first_in_universe_date | last_in_universe_date | status |
 
+`sector` and `industry` here are **deprecated and always empty** — they predate
+the classification fetcher and nothing reads them. Sector data lives in
+`sector_classification.csv` (below); the columns are retained only so the master
+schema every fetcher loads stays stable.
+
+### `sector_classification.csv`
+| symbol | isin | macro_sector | sector | industry | basic_industry | macro_code | sector_code | industry_code | basic_industry_code | source | as_of |
+
+The NSE/BSE unified 4-level industry classification, one row per metadata symbol.
+`source` ∈ {`screener`, `bse`, `nse_bulk`, `override`, `unresolved`}. `*_code` are
+the official NSE hierarchy codes (`IN03` / `IN0301` / `IN030103` / `IN030103001`)
+and are populated only by the screener source. See §9.
+
 ### `universe_history.csv`
 | quarter_end_date | rank | symbol | isin | market_cap_inr | free_float_market_cap_inr | close_inr | shares_outstanding | free_float_shares |
 
@@ -342,6 +360,7 @@ python -m pipeline.universe --bootstrap --refresh-universe   # writes flat metad
 python -m pipeline.fetch_shp_xbrl                            # writes shares_outstanding.csv from NSE XBRL
 python -m pipeline.universe                                  # ranks using bhavcopy × XBRL shares; rewrites metadata.csv to universe symbols
 python -m pipeline.fetch_financials                          # writes financials panels; reads metadata (universe symbols only)
+python -m pipeline.fetch_sectors                             # NSE/BSE unified industry classification (reads the screener cache above)
 python -m pipeline.fetch_prices                              # adjusted OHLCV for total-return series
 python -m pipeline.validate
 
@@ -359,11 +378,11 @@ python -m pipeline.run_pipeline --mode {smoke|full|daily|quarterly|force} [--sym
 
 | Mode | Steps | Notes |
 |---|---|---|
-| `smoke` | All 6 | 3 symbols (RELIANCE, TCS, ZYDUSWELL) |
-| `full` | All 6 | All metadata symbols |
-| `quarterly` | All 6 | Alias for `full` |
-| `force` | All 6 | `--force` passed to `fetch_shp_xbrl` and `fetch_financials` |
-| `daily` | 3 (xbrl + prices + validate) | Incremental update only |
+| `smoke` | All 7 | 3 symbols (RELIANCE, TCS, ZYDUSWELL) |
+| `full` | All 7 | All metadata symbols |
+| `quarterly` | All 7 | Alias for `full` |
+| `force` | All 7 | `--force` passed to `fetch_shp_xbrl`, `fetch_financials` and `fetch_sectors` |
+| `daily` | 3 (xbrl + prices + validate) | Incremental update only; classifications don't move daily |
 
 ---
 
@@ -412,14 +431,80 @@ Implemented as a `Validator` class — each `check_*(v: Validator)` function rec
 
 ---
 
-## 9. Logging
+## 9. Sector Classification (`fetch_sectors.py`)
+
+### Taxonomy
+
+NSE and BSE publish the same SEBI-mandated 4-level industry classification. All
+four levels are stored; `sector` (22 values) is the default grouping level for
+backtest caps and attribution.
+
+| Level | Count | Example | NSE code |
+|---|---|---|---|
+| `macro_sector` | 12 | Energy | `IN03` |
+| `sector` | 22 | Oil, Gas & Consumable Fuels | `IN0301` |
+| `industry` | ~55 | Petroleum Products | `IN030103` |
+| `basic_industry` | ~152 | Refineries & Marketing | `IN030103001` |
+
+### Resolution precedence (first hit wins, per symbol)
+
+1. **`reference/sector_overrides.csv`** — hand-curated, tracked in git. 19 rows
+   covering delisted/merged names no live source classifies any more (PSU bank
+   mergers, Gruh, Monsanto India, ...). Highest precedence, so a wrong upstream
+   value can always be pinned.
+2. **Cached screener.in HTML** — the peer-comparison breadcrumb carries all four
+   levels *and* the official NSE hierarchy codes. Free: `fetch_financials`
+   already populated the cache. **902 / 922 symbols.** Cache *age* is ignored
+   here — `fetch_financials` owns screener freshness, and a stale page still
+   carries a good classification, whereas re-fetching a dead page costs a
+   multi-minute tenacity backoff. A page is only downloaded when there is no
+   cached copy at all.
+3. **BSE `ComHeader` API** — `Sector` / `IndustryNew` / `IGroup` / `ISubGroup`
+   are the same four levels (no codes). Scrip code resolved from the bulk BSE
+   scrip master (Active + Delisted + Suspended, ~10.8k rows, cached 7 days) by
+   ISIN, then by BSE ticker. BSE returns blanks for most delisted scrips, so
+   this recovers **1** symbol today — kept because it costs two requests and
+   auto-heals future delistings.
+4. **NSE `ind_niftytotalmarket_list.csv`** — `Industry` column is the Sector
+   level for ~750 current constituents. Used mainly as a **cross-check**; only
+   used as a source when 1–3 all miss.
+
+Unresolved symbols get `UNKNOWN` at every level (not NaN, so the backtest's
+`sector_map.get(s, "UNKNOWN")` default stays consistent) and a
+`sector_unresolved` row in `data_gaps.csv`. Current coverage: **922 / 922, zero
+UNKNOWN.**
+
+### Cross-check
+
+Every run compares the winning Sector against NSE's own published value for the
+~750 current constituents. Agreement is **673 / 674**; the single disagreement
+(`SKFINDIA`: screener says Capital Goods, NSE says Automobile and Auto
+Components) is a reclassification screener hasn't picked up. Disagreements are
+logged as WARN, never auto-corrected.
+
+### Normalisation
+
+NSE's index CSVs drop commas that NSE's website, BSE and screener all keep
+(`Oil Gas & Consumable Fuels` vs `Oil, Gas & Consumable Fuels`); a small
+`_ALIASES` map normalises onto the comma-bearing spelling. The distinct
+`macro_sector` / `sector` values are then checked against the known 12 / 22, and
+anything outside is logged as a taxonomy-drift WARN.
+
+### Not point-in-time
+
+The classification is a **current snapshot**. No free historical source for
+Indian sector classification exists, so a 2018 backtest is grouped by today's
+labels. The `as_of` column records when the snapshot was taken. Reclassifications
+are rare (1 in 674 above), but this is a real limitation, not a rounding detail.
+
+## 10. Logging
 - All scripts use `pipeline/utils/logger.py` → `pipeline/logs/run_YYYYMMDD_HHMMSS.log` + stdout. **One file per process**: every `get_logger(name)` call within one `python -m pipeline.<script>` invocation attaches the same shared `FileHandler`, so a `run_pipeline.py` invocation produces one log file rather than 6+.
 - Stdout stream configured with `errors="replace"` to handle Windows cp1252 terminals.
 - Log levels: INFO (per-symbol progress), WARN (retries, parse anomalies), ERROR (final failures), DEBUG (sleep/cache details).
 
 ---
 
-## 10. Config Defaults (`pipeline/configs/config.py`)
+## 11. Config Defaults (`pipeline/configs/config.py`)
 Organized into sections: Paths, Universe (incl. `PROJECT_START_DATE`), HTTP politeness, Parallelism, Caches.
 ```python
 # Universe
@@ -429,8 +514,8 @@ FINANCIALS_HISTORY_LOOKBACK_QUARTERS = 6     # financials extend this many quart
 UNIVERSE_SIZE = 500
 
 # HTTP politeness (per-thread sleeps; do not throttle aggregate rate)
-MIN_SLEEP_NSE,      MAX_SLEEP_NSE      = 1.0, 2.0   # NSE bhavcopy + XBRL
-MIN_SLEEP_SCREENER, MAX_SLEEP_SCREENER = 2.0, 4.0
+MIN_SLEEP_SCREENER, MAX_SLEEP_SCREENER = 1.0, 2.0
+MIN_SLEEP_NSE,      MAX_SLEEP_NSE      = 0.5, 1.0   # NSE bhavcopy + XBRL + BSE
 MAX_RETRIES = 3
 
 # Parallelism (peak concurrent requests = workers; stay 8-16 for NSE/Akamai)
@@ -445,12 +530,18 @@ XBRL_INDEX_CACHE_DAYS = 1
 BHAVCOPY_CACHE_DIR    = os.path.join(DATA_DIR, "bhavcopy_cache")
 NSE_CORPACT_CACHE_DIR = os.path.join(DATA_DIR, "nse_corpact_cache")
 NSE_CORPACT_CACHE_DAYS = 7
+BSE_MASTER_CACHE_FILE  = os.path.join(DATA_DIR, "bse_scrip_master.json")
+BSE_MASTER_CACHE_DAYS  = 7          # sector fallback: ISIN/ticker -> BSE scrip code
+
+# Reference data (tracked in git, unlike DATA_DIR)
+REFERENCE_DIR         = os.path.join(_PKG_ROOT, "reference")
+SECTOR_OVERRIDES_FILE = os.path.join(REFERENCE_DIR, "sector_overrides.csv")
 ```
 No proxy config — direct curl_cffi only. Worker defaults can be overridden ad-hoc with `--workers N` on the individual scripts.
 
 ---
 
-## 11. Known Limitations
+## 12. Known Limitations
 - Screener HTML only shows the last 13 quarters; `financials_quarter_coverage_40q` will warn until 10+ years of re-scraping accumulates.
 - Screener XLSX export requires authentication — not used. HTML parsing covers the same data for public pages.
 - yfinance >= 0.2.40 requires its own curl_cffi session; do NOT pass `requests.Session` to `yf.Ticker()`.
@@ -462,16 +553,22 @@ No proxy config — direct curl_cffi only. Worker defaults can be overridden ad-
 - Free-float reconciliation post-demerger: TMPV + TMCV free-float sum ≠ pre-demerger TATAMOTORS free-float. This is correct; do not reconcile.
 - Symbol reincarnation (delisted ticker reused by an unrelated company): `symbol_history.csv` collapses both into a single `(first_seen, last_seen)` pair. Validator unexplained-entry checks surface such edge cases for manual review.
 - Current Assets and Current Liabilities are not available from screener's public HTML.
+- Sector classification is a current snapshot, not point-in-time (§9). Historical
+  reclassifications are invisible; a symbol carries today's label across the whole
+  backtest window.
+- Sector classification for 19 delisted/merged symbols is hand-curated in
+  `reference/sector_overrides.csv`. New delistings that no live source classifies
+  will surface as `sector_unresolved` in `data_gaps.csv` and need a manual row.
 
-## 12. Out of Scope
+## 13. Out of Scope
 - Intraday data
 - Standalone (non-consolidated) financials
 - Derivative/F&O data
-- ~~Analysis layer (raw storage only)~~ — backtest engine added in v0.5.0 (see §13)
+- ~~Analysis layer (raw storage only)~~ — backtest engine added in v0.5.0 (see §14)
 - Official Nifty 500 membership reconstruction (requires NSE press release scraping)
 - Pre-2018 universe history from any alternate shares source
 
-## 13. Backtest Engine (`backtest/`, separate module)
+## 14. Backtest Engine (`backtest/`, separate module)
 
 Flexible, PIT-correct, survivorship-bias-free backtester built on top of the database. Detailed design in [../../backtest/docs/architecture.md](../../backtest/docs/architecture.md). Highlights:
 
