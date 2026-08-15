@@ -175,14 +175,14 @@ def _active_weights_fig(weights_df, ctx, n=10):
     import plotly.graph_objects as go
     if weights_df.empty:
         return None
+    from .context import benchmark_weights_asof
     last_date = weights_df.index[-1]
     port_w = weights_df.iloc[-1].drop(labels=["CASH"], errors="ignore")
-    snap = ctx.snap_asof(last_date)
-    if snap.empty:
+    # Same helper the sector tilts use, so stock-level and sector-level active
+    # weights can never be computed off different benchmark vectors.
+    bench_w = benchmark_weights_asof(ctx, last_date)
+    if bench_w.empty:
         return None
-    bench_w = snap["free_float_market_cap_inr"].astype(float)
-    bench_w = bench_w[bench_w > 0]
-    bench_w = bench_w / bench_w.sum()
     all_syms = port_w.index.union(bench_w.index)
     diff = port_w.reindex(all_syms).fillna(0) - bench_w.reindex(all_syms).fillna(0)
     diff = diff[diff != 0]
@@ -468,6 +468,8 @@ def _header_html(cfg):
         ("Signal top quantile",
          f"{cfg.signal_top_quantile:.0%}" if cfg.signal_top_quantile is not None else "—"),
         ("Max stock wt", f"{cfg.max_stock_wt:.0%}" if cfg.max_stock_wt else "—"),
+        (f"Max {cfg.sector_level} wt",
+         f"{cfg.max_sector_wt:.0%}" if cfg.max_sector_wt is not None else "—"),
         ("Cash buffer", f"{cfg.cash_buffer:.0%}"),
         ("Benchmark", cfg.benchmark),
     ]

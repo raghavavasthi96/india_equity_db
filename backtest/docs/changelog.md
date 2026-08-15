@@ -22,7 +22,9 @@ classification (`pipeline/docs/changelog.md` v0.4.5).
   `sector_active_wt_end`, `sector_attribution_residuals`.
 - **Dashboard**: sector weight area chart, cumulative net contribution by sector,
   and active sector tilt vs ff-mcap top-500 replace the old
-  "Sector breakdown unavailable" note.
+  "Sector breakdown unavailable" note. Header band gains a max-sector-weight cell
+  alongside the existing max-stock-weight one, labelled with the active
+  `sector_level`.
 - **`rebalance_diagnostics.csv`** gains a `sector` column.
 
 ### Changed

@@ -296,7 +296,7 @@ Drawdown stats computed for all three series (gross portfolio, net portfolio, be
 
 `backtest/dashboard.py` writes a single self-contained Plotly HTML to `dashboard.html`. Sections, top to bottom:
 
-- **Header band** — run ID, dates, rebal freq, weighting, signal, key caps.
+- **Header band** — run ID, dates, rebal freq, weighting, signal, key caps. The sector-cap cell is labelled with the active `cfg.sector_level` (e.g. "Max macro_sector wt"), and shows `—` when no cap is set.
 - **Performance** — equity curve (gross / net / bench, log toggle); active equity; drawdown overlay (gross / net / bench); calendar-year grouped bars.
 - **Stats table** — every field in `summary.json`.
 - **Risk & turnover** — rolling return / vol / Sharpe / IR (4-panel, window = `cfg.rolling_window_days`, default 252); turnover bars per rebal; t-cost bars per rebal (bps); position count over time.
