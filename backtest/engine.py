@@ -89,10 +89,9 @@ def _build_target_for_date(
 
 
 def _load_benchmark(ctx: BacktestContext, span: pd.DatetimeIndex) -> pd.Series:
-    """Load Nifty 500 TRI from CSV; align to backtest span as daily returns."""
-    from .utils.benchmark import load_nifty500_tri, DEFAULT_PATH
-    path = ctx.cfg.benchmark_csv or DEFAULT_PATH
-    tri = load_nifty500_tri(path)
+    """Load the configured benchmark TRI; align to backtest span as daily returns."""
+    from .utils.benchmark import load_tri
+    tri = load_tri(ctx.cfg.benchmark, path=ctx.cfg.benchmark_csv)
     tri = tri.reindex(span).ffill()
     rets = tri.pct_change().fillna(0.0)
     rets.name = "benchmark"
