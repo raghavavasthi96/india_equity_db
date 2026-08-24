@@ -182,14 +182,18 @@ class BacktestConfig:
 
     # ----- Benchmark / reporting --------------------------------------------
     benchmark: str = "nifty500_tri"
-    # Identifier shown in dashboard/outputs. Currently only "nifty500_tri" is
-    # supported — externally-sourced Nifty 500 Total Returns Index loaded from
-    # `benchmark_csv`. Used for IR/TE/active calculations.
+    # Which externally-sourced Total Returns Index to compare against. Must be a
+    # key of `backtest.utils.benchmark.BENCHMARKS`:
+    #     "nifty500_tri"            — Nifty 500 TRI
+    #     "nifty500_momentum50_tri" — Nifty500 Momentum 50 TRI
+    # Selects the cached CSV and labels the dashboard. Used for IR/TE/active.
+    # Note only the *return* benchmark switches — benchmark weights stay the PIT
+    # ff-mcap top-500 (see `context.benchmark_weights_asof`).
 
     benchmark_csv: Optional[str] = None
-    # Path to CSV with columns `date,close` (TRI level). None = use the project
-    # default `backtest/data/nifty500_tri.csv`. Seed/refresh with:
-    #     python -m backtest.utils.benchmark --start 2018-01-01
+    # Path to CSV with columns `date,close` (TRI level). None = the cached file
+    # for `benchmark` under `backtest/data/`. Seed/refresh with:
+    #     python -m backtest.utils.benchmark --index nifty500_tri --start 2018-01-01
 
     rolling_window_days: int = 252
     # Window length for rolling-stats panels in the dashboard (return, vol,

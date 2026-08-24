@@ -1,5 +1,40 @@
 # Backtest changelog
 
+## v0.5.5 — 2026-08-24
+
+Benchmark selection: the return benchmark is no longer hardwired to Nifty 500.
+
+### Added
+- **`benchmark.BENCHMARKS`** — registry mapping a config key to (niftyindices
+  index name, cache filename). Ships with `nifty500_tri` (`NIFTY 500`) and
+  `nifty500_momentum50_tri` (`NIFTY500 MOMENTUM 50`). Add a row to support
+  another index; no other code changes needed.
+- **`benchmark.fetch_tri` / `load_tri` / `benchmark_path`** — index-aware
+  replacements for `fetch_nifty500_tri` / `load_nifty500_tri`, which remain as
+  thin back-compat wrappers. An unknown key raises `KeyError` listing the known
+  ones, rather than silently fetching nothing (the API returns `[]` for an
+  unrecognised index name).
+- **`--index` flag** on `python -m backtest.utils.benchmark`
+  (`choices=sorted(BENCHMARKS)`). `--out` now defaults to `None` = the registry
+  filename.
+- **`backtest/data/nifty500_momentum50_tri.csv`** — 2,141 rows, 2018-01-01 →
+  2026-08-21. (The API serves this index back to 2005-04-01 if a longer history
+  is ever wanted.)
+
+### Changed
+- **`engine._load_benchmark`** now honours `cfg.benchmark`:
+  `load_tri(cfg.benchmark, path=cfg.benchmark_csv)`. Previously `cfg.benchmark`
+  was a display-only label and only `benchmark_csv` could redirect the load.
+  `benchmark_csv` still wins when set.
+- `cfg.benchmark` default unchanged (`nifty500_tri`), so existing run configs
+  reproduce identically.
+
+### Unchanged
+- Benchmark **weights** are still the PIT ff-mcap top-500 vector
+  (`context.benchmark_weights_asof`) for every `cfg.benchmark` — TRI files carry
+  index levels only, no constituents. Active-weight and sector-attribution
+  panels run against a non-500 TRI therefore mix return and weight benchmarks.
+
 ## v0.5.4 — 2026-08-15
 
 Sector caps, breakdown and attribution activated by the new pipeline

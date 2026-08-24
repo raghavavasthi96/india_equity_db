@@ -575,7 +575,7 @@ Flexible, PIT-correct, survivorship-bias-free backtester built on top of the dat
 - **Inputs**: `pipeline/data/universe_history.csv` (PIT membership + ff-mcap), `pipeline/data/prices_panel.csv` (total-return adjusted), `pipeline/data/shares_outstanding.csv`, `pipeline/data/financials_panel.csv`, `backtest/data/nifty500_tri.csv` (benchmark).
 - **Knobs** (`BacktestConfig`): rebal freq, weighting (equal / ffmcap / score_weighted / ffmcap_tilt), per-name signal, stock/sector/size caps, universe filters (price / ADV / history / rank / free-float / blacklist), composite-illiquidity t-cost, cash buffer.
 - **Outputs** (per `backtest/data/backtests/<run_id>/`): `config.json`, daily `weights.csv`, `rebalance_diagnostics.csv`, `returns.csv`, `turnover.csv`, `tcost.csv`, `summary.json`, and a self-contained Plotly `dashboard.html` (dark theme).
-- **Benchmark**: Nifty 500 TRI loaded from `backtest/data/nifty500_tri.csv`. Seed via `python -m backtest.utils.benchmark --start 2018-01-01`.
+- **Benchmark**: TRI selected by `cfg.benchmark` from the `backtest.utils.benchmark.BENCHMARKS` registry — `nifty500_tri` (default) or `nifty500_momentum50_tri`. Seed via `python -m backtest.utils.benchmark --index <key> --start 2018-01-01`.
 - **CLI**: `python -m backtest.run_backtest backtest/configs/<preset>.py`.
 
 The engine is decoupled from the data pipeline — adding signals, new weighting modes, or filters requires no changes to fetchers. One-way dependency: backtest reads `pipeline.configs.config.DATA_DIR`; pipeline never imports backtest.

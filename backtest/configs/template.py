@@ -62,8 +62,8 @@ cfg = BacktestConfig(
     # cash_buffer=0.0,
 
     # ----- Benchmark -----
-    # benchmark="nifty500_tri",
-    # benchmark_csv=None,         # None = backtest/data/nifty500_tri.csv
+    # benchmark="nifty500_tri",   # or "nifty500_momentum50_tri"
+    # benchmark_csv=None,         # None = cached CSV for `benchmark`
 
     # ----- Reporting -----
     # rolling_window_days=252,

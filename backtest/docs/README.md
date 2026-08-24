@@ -15,16 +15,22 @@ Requires the pipeline data to already be built (run the pipeline first, see the
 pipeline README). Then seed the benchmark once:
 
 ```bash
-# Fetch / refresh Nifty 500 Total Returns Index from niftyindices.com
+# Fetch / refresh Nifty 500 Total Returns Index from niftyindices.com (default)
 python -m backtest.utils.benchmark --start 2018-01-01
+
+# Nifty500 Momentum 50 TRI
+python -m backtest.utils.benchmark --index nifty500_momentum50_tri --start 2018-01-01
 
 # Custom output path
 python -m backtest.utils.benchmark --start 2018-01-01 --out backtest/data/my_benchmark.csv
 ```
 
-Writes `backtest/data/nifty500_tri.csv` (columns: `date,close`). Chunked
-360-day requests via `curl_cffi` to bypass NSE's bot guard. Re-run periodically
-to keep the series current.
+Writes one CSV per index under `backtest/data/` (columns: `date,close`), named
+by the `BENCHMARKS` registry in `backtest/utils/benchmark.py`:
+`nifty500_tri.csv` and `nifty500_momentum50_tri.csv`. Select which one a run
+compares against with `BacktestConfig.benchmark`. Chunked 360-day requests via
+`curl_cffi` to bypass NSE's bot guard. Re-run periodically to keep the series
+current.
 
 ---
 

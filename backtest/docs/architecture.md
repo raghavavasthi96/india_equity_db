@@ -25,6 +25,7 @@ to `pipeline/data/`). Backtest-owned data lives under `backtest/data/`.
 | `pipeline/data/metadata.csv` | Company names / ISIN / universe dates |
 | `pipeline/data/sector_classification.csv` | NSE/BSE unified 4-level industry classification (`python -m pipeline.fetch_sectors`). Default source for sector caps, breakdown and attribution |
 | `backtest/data/nifty500_tri.csv` | Nifty 500 Total Returns Index, fetched via `python -m backtest.utils.benchmark` |
+| `backtest/data/nifty500_momentum50_tri.csv` | Nifty500 Momentum 50 TRI, fetched via `python -m backtest.utils.benchmark --index nifty500_momentum50_tri` |
 
 Prices are total-return adjusted upstream, so daily `close.pct_change()` gives total returns. No further CA handling.
 
@@ -123,9 +124,9 @@ Trading convention: snapshot at `rebal_date`, trade at `rebal_date + rebal_offse
 | `extra_filters` | `[]` | User callables `(pool, date, ctx) → pool`, appended to the pre-signal stack |
 | `tcost` | `TcostConfig(...)` | See §8 |
 | `cash_buffer` | `0.0` | Post-cap residual; weights normalised to `1 - cash_buffer`, remainder held in `CASH` |
-| `benchmark` | `"ffmcap_top500"` | Internal benchmark name |
+| `benchmark` | `"nifty500_tri"` | Return benchmark; key of `benchmark.BENCHMARKS` (`nifty500_tri`, `nifty500_momentum50_tri`) |
 | `rolling_window_days` | `252` | Window for rolling stats in dashboard (return, vol, Sharpe, IR) |
-| `benchmark_csv` | `None` | TRI CSV override; `None` = `backtest/data/nifty500_tri.csv` |
+| `benchmark_csv` | `None` | TRI CSV override; `None` = the cached file for `benchmark` |
 | `run_id` | `None` | Output subdirectory name; auto-generated from timestamp + weighting + signal + freq |
 | `out_dir` | `None` | Full output-directory override; `None` = `backtest/data/backtests/<run_id>/` |
 
@@ -218,11 +219,20 @@ Size buckets defined by `cfg.size_buckets` (rank ranges, inclusive bounds). PIT 
 
 ## 12. Benchmark
 
-`nifty500_tri`: externally-sourced Nifty 500 Total Returns Index, loaded from `backtest/data/nifty500_tri.csv` (columns: `date,close`). Daily returns = `close.pct_change()`, reindexed and forward-filled onto the backtest calendar.
+`cfg.benchmark` picks an externally-sourced Total Returns Index from the `BENCHMARKS` registry in `backtest/utils/benchmark.py`, which maps a config key to (niftyindices index name, cache filename):
 
-Seed/refresh with `python -m backtest.utils.benchmark --start 2018-01-01`, which fetches from niftyindices.com's `getTotalReturnIndexString` endpoint (chunked 360-day requests, curl_cffi for NSE bot guard) and writes the CSV.
+| `cfg.benchmark` | Index | Cache file |
+|---|---|---|
+| `nifty500_tri` (default) | `NIFTY 500` | `backtest/data/nifty500_tri.csv` |
+| `nifty500_momentum50_tri` | `NIFTY500 MOMENTUM 50` | `backtest/data/nifty500_momentum50_tri.csv` |
 
-`BacktestConfig.benchmark_csv` overrides the default path if needed (e.g. to point at a custom index file).
+Each CSV has columns `date,close`. Daily returns = `close.pct_change()`, reindexed and forward-filled onto the backtest calendar.
+
+Seed/refresh with `python -m backtest.utils.benchmark --index <key> --start 2018-01-01`, which fetches from niftyindices.com's `getTotalReturnIndexString` endpoint (chunked 360-day requests, curl_cffi for NSE bot guard) and writes the CSV. The API name must match the registry string exactly — an unrecognised name returns an empty list rather than an error, so an unknown `cfg.benchmark` raises `KeyError` up front instead.
+
+`BacktestConfig.benchmark_csv` overrides the resolved path if needed (e.g. to point at a custom index file).
+
+**Only the return benchmark is selectable.** Benchmark *weights* remain the PIT ff-mcap top-500 vector (§ `context.benchmark_weights_asof`) regardless of `cfg.benchmark`, because the TRI files carry index levels only and no constituents. Running active-weight or sector-attribution analysis against `nifty500_momentum50_tri` therefore compares returns to Momentum 50 while comparing weights to the top-500 — interpret those panels with that mismatch in mind.
 
 ## 13. Outputs
 

@@ -4,6 +4,16 @@ Per-module changelogs:
 - [`pipeline/docs/changelog.md`](pipeline/docs/changelog.md) — pipeline (v0.1–v0.4).
 - [`backtest/docs/changelog.md`](backtest/docs/changelog.md) — backtest engine (v0.5.0+).
 
+## v0.6.4 — 2026-08-24
+
+Selectable return benchmark. See
+[`backtest/docs/changelog.md`](backtest/docs/changelog.md) v0.5.5.
+
+### Backtest
+- `benchmark.BENCHMARKS` registry + `--index` CLI flag; `cfg.benchmark` now
+  actually selects the TRI the engine loads (`nifty500_tri` default,
+  `nifty500_momentum50_tri` added). Benchmark weights stay ff-mcap top-500.
+
 ## v0.6.3 — 2026-08-15
 
 NSE/BSE unified sector classification, end to end. See per-module changelogs:
